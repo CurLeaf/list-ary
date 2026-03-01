@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Listary Tools</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'] },
+          colors: {
+            term: {
+              bg: '#0c0c0c',
+              card: '#141414',
+              border: '#2a2a2a',
+              green: '#00ff9f',
+              amber: '#ffb800',
+              red: '#ff4444',
+              cyan: '#00bfff',
+              text: '#e0e0e0',
+              dim: '#666666',
+              select: '#1a3a2a',
+            }
+          },
+        }
+      }
+    }
+  </script>
+  <style>
+    [x-cloak] { display: none !important; }
+    * { scrollbar-width: thin; scrollbar-color: #2a2a2a transparent; }
+    body { font-family: 'JetBrains Mono', monospace; }
+
+    /* ── Card ── */
+    .card {
+      background: #141414;
+      border: 1px solid #2a2a2a;
+      border-radius: 4px;
+      padding: 16px;
+      transition: border-color 0.1s ease;
+    }
+    .card:hover { border-color: #444; }
+    .card-static {
+      background: #141414;
+      border: 1px solid #2a2a2a;
+      border-radius: 4px;
+      padding: 16px;
+    }
+
+    /* ── Buttons ── */
+    .btn-primary {
+      background: #00ff9f;
+      color: #0c0c0c;
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      border: none; cursor: pointer;
+      transition: all 0.1s ease;
+      font-family: inherit;
+    }
+    .btn-primary:hover { background: #0c0c0c; color: #00ff9f; outline: 1px solid #00ff9f; }
+    .btn-primary:active { opacity: 0.8; }
+    .btn-primary:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid #2a2a2a;
+      color: #666;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.1s ease;
+      font-family: inherit;
+    }
+    .btn-ghost:hover { border-color: #444; color: #e0e0e0; }
+    .btn-ghost:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    .btn-danger {
+      background: rgba(255,68,68,0.1);
+      color: #ff4444;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      border: 1px solid rgba(255,68,68,0.2);
+      cursor: pointer;
+      transition: all 0.1s ease;
+      font-family: inherit;
+    }
+    .btn-danger:hover { background: rgba(255,68,68,0.2); border-color: #ff4444; }
+
+    .btn-success {
+      background: rgba(0,255,159,0.1);
+      color: #00ff9f;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      border: 1px solid rgba(0,255,159,0.2);
+      cursor: pointer;
+      transition: all 0.1s ease;
+      font-family: inherit;
+    }
+    .btn-success:hover { background: rgba(0,255,159,0.2); border-color: #00ff9f; }
+
+    /* ── Input ── */
+    .input-field {
+      width: 100%;
+      background: #0c0c0c;
+      border: 1px solid #2a2a2a;
+      border-radius: 2px;
+      padding: 10px 12px;
+      font-size: 13px;
+      color: #e0e0e0;
+      outline: none;
+      transition: border-color 0.1s;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .input-field::placeholder { color: #444; }
+    .input-field:focus { border-color: #00ff9f; }
+
+    /* ── Nav ── */
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      width: 100%;
+      padding: 8px 12px;
+      font-size: 12px; font-weight: 500;
+      color: #666;
+      cursor: pointer; border: none; background: transparent;
+      text-align: left;
+      transition: color 0.1s;
+      font-family: inherit;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .nav-item:hover { color: #e0e0e0; }
+    .nav-item.active { color: #00ff9f; }
+    .nav-prefix {
+      width: 14px;
+      text-align: center;
+      color: transparent;
+      font-weight: 700;
+    }
+    .nav-item.active .nav-prefix { color: #00ff9f; }
+    .nav-icon { width: 16px; height: 16px; flex-shrink: 0; stroke-width: 1.5; }
+
+    /* ── Animation (minimal) ── */
+    .fade-in { animation: fadeIn 0.1s ease; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+    /* ── Modal ── */
+    .modal-backdrop { background: rgba(0,0,0,0.7); }
+    .modal-panel {
+      background: #141414;
+      border: 1px solid #2a2a2a;
+      border-radius: 4px;
+    }
+
+    /* ── Toast ── */
+    .toast-item {
+      background: #141414;
+      border: 1px solid #2a2a2a;
+      border-radius: 4px;
+      padding: 10px 14px;
+      font-size: 12px;
+      color: #e0e0e0;
+      animation: fadeIn 0.1s ease;
+    }
+
+    /* ── Filter tab ── */
+    .filter-btn {
+      padding: 4px 10px;
+      font-size: 11px;
+      border: 1px solid #2a2a2a;
+      border-radius: 2px;
+      background: transparent;
+      color: #666;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.1s;
+    }
+    .filter-btn:hover { border-color: #444; color: #e0e0e0; }
+    .filter-btn.active { border-color: #00ff9f; color: #00ff9f; background: #1a3a2a; }
+  </style>
+</head>
+<body class="bg-term-bg text-term-text min-h-screen font-mono select-none" x-data="app()" x-cloak>
+
+  <!-- Toast -->
+  <div class="fixed top-4 right-4 z-50 flex flex-col gap-2" style="max-width:300px;">
+    <template x-for="t in toasts" :key="t.id">
+      <div class="toast-item"
+           x-init="setTimeout(() => toasts = toasts.filter(x => x.id !== t.id), 3000)">
+        <span class="mr-2" :class="{
+          'text-term-green': t.type==='success',
+          'text-term-red': t.type==='error',
+          'text-term-cyan': t.type==='info'
+        }" x-text="t.type==='success' ? '[OK]' : t.type==='error' ? '[!!]' : '[..]'"></span>
+        <span x-text="t.msg"></span>
+      </div>
+    </template>
+  </div>
+
+  <div class="flex h-screen">
+
+    <!-- ─── Sidebar ─── -->
+    <nav class="w-[190px] bg-term-bg flex flex-col shrink-0 border-r border-term-border">
+      <div class="px-4 pt-5 pb-4">
+        <div class="text-term-green text-xs font-bold tracking-wider">LISTARY</div>
+        <div class="text-term-dim text-[10px] mt-0.5">v1.0</div>
+      </div>
+      <div class="border-t border-term-border mx-3 mb-2"></div>
+
+      <div class="flex-1 px-2 space-y-0.5">
+        <button class="nav-item" :class="tab === 'kill' && 'active'" @click="switchTab('kill')">
+          <span class="nav-prefix">></span>
+          <i data-lucide="zap" class="nav-icon"></i> <span x-text="t('nav_kill')"></span>
+        </button>
+        <button class="nav-item" :class="tab === 'ssh' && 'active'" @click="switchTab('ssh'); loadServers()">
+          <span class="nav-prefix">></span>
+          <i data-lucide="terminal" class="nav-icon"></i> <span x-text="t('nav_ssh')"></span>
+        </button>
+        <button class="nav-item" :class="tab === 'sshcfg' && 'active'" @click="switchTab('sshcfg'); loadServers()">
+          <span class="nav-prefix">></span>
+          <i data-lucide="settings" class="nav-icon"></i> <span x-text="t('nav_sshcfg')"></span>
+        </button>
+        <button class="nav-item" :class="tab === 'windsurf' && 'active'" @click="switchTab('windsurf'); loadProjects()">
+          <span class="nav-prefix">></span>
+          <i data-lucide="folder-git-2" class="nav-icon"></i> <span x-text="t('nav_windsurf')"></span>
+        </button>
+        <button class="nav-item" :class="tab === 'dashboard' && 'active'" @click="switchTab('dashboard'); loadSessions()">
+          <span class="nav-prefix">></span>
+          <i data-lucide="layout-dashboard" class="nav-icon"></i> <span x-text="t('nav_board')"></span>
+        </button>
+        <button class="nav-item" :class="tab === 'settings' && 'active'" @click="switchTab('settings'); loadSettings()">
+          <span class="nav-prefix">></span>
+          <i data-lucide="sliders-horizontal" class="nav-icon"></i> <span x-text="t('nav_config')"></span>
+        </button>
+      </div>
+
+      <div class="border-t border-term-border mx-3 mt-2"></div>
+      <div class="px-2 pb-3 pt-2">
+        <button class="nav-item text-term-red/70 hover:text-term-red" @click="cleanAll()">
+          <span class="nav-prefix">></span>
+          <i data-lucide="trash-2" class="nav-icon"></i> <span x-text="t('nav_clean')"></span>
+        </button>
+      </div>
+    </nav>
+
+    <!-- ─── Content ─── -->
+    <main class="flex-1 bg-term-bg overflow-y-auto">
+      <div class="max-w-3xl mx-auto px-6 py-6">
+
+        <!-- ═══ KILL PORT ═══ -->
+        <div x-show="tab === 'kill'" class="fade-in">
+          <h2 class="text-sm font-bold text-term-green mb-5 uppercase tracking-wider" x-text="t('kill_title')"></h2>
+          <div class="card-static mb-5">
+            <p class="text-xs text-term-dim mb-3" x-text="t('kill_desc')"></p>
+            <div class="flex gap-2">
+              <input type="number" class="input-field flex-1" placeholder="3000"
+                     x-model="killPort" @keydown.enter="doKill()" min="1" max="65535">
+              <button class="btn-primary" @click="doKill()" :disabled="!killPort || killing">
+                <span x-text="killing ? t('kill_killing') : t('kill_btn')"></span>
+              </button>
+            </div>
+            <div x-show="killResult" class="mt-4 fade-in">
+              <template x-if="killResult && killResult.count === 0">
+                <p class="text-xs text-term-amber" x-text="t('kill_no_process', killResult.port)"></p>
+              </template>
+              <template x-if="killResult && killResult.count > 0">
+                <div class="space-y-1.5">
+                  <p class="text-xs text-term-green" x-text="t('kill_terminated', killResult.count)"></p>
+                  <template x-for="k in killResult.killed" :key="k.pid">
+                    <div class="flex items-center justify-between bg-term-bg rounded px-3 py-2">
+                      <div class="flex items-center gap-3">
+                        <span class="text-xs text-term-cyan" x-text="'PID ' + k.pid"></span>
+                        <span class="text-xs text-term-text" x-text="k.name"></span>
+                      </div>
+                      <span class="text-[10px]"
+                            :class="k.status === 'killed' ? 'text-term-green' : 'text-term-red'"
+                            x-text="k.status === 'killed' ? '[OK]' : '[!!]'"></span>
+                    </div>
+                  </template>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Active ports list -->
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <h3 class="text-xs font-bold text-term-dim uppercase tracking-wider" x-text="t('kill_listening')"></h3>
+              <span x-show="listeningPorts.length" class="text-[10px] text-term-dim" x-text="listeningPorts.length + (portsTotal > 30 ? '/' + portsTotal : '')"></span>
+            </div>
+            <div class="flex items-center gap-2">
+              <input type="text" class="input-field text-xs" style="width:140px;padding:4px 8px;" :placeholder="t('kill_search')"
+                     x-model="portSearch">
+              <button class="btn-ghost text-[10px]" @click="loadListeningPorts()" :disabled="loadingPorts">
+                <span x-text="loadingPorts ? t('kill_loading') : t('kill_refresh')"></span>
+              </button>
+            </div>
+          </div>
+          <template x-if="filteredPorts.length === 0 && !loadingPorts">
+            <div class="card-static text-center py-8">
+              <p class="text-term-dim text-xs">[--] <span x-text="t('kill_no_data')"></span></p>
+            </div>
+          </template>
+          <div class="space-y-1" x-show="filteredPorts.length > 0">
+            <template x-for="p in filteredPorts" :key="p.port">
+              <div class="card flex items-center justify-between py-2.5 px-3">
+                <div class="flex items-center gap-4 flex-1 min-w-0">
+                  <span class="text-xs font-bold text-term-cyan w-12 shrink-0" x-text="p.port"></span>
+                  <span class="text-xs text-term-text truncate" x-text="p.name"></span>
+                  <span class="text-[10px] text-term-dim" x-text="'PID ' + p.pid"></span>
+                </div>
+                <button class="btn-danger text-[10px]" @click="killPort = String(p.port); doKill().then(() => loadListeningPorts())" x-text="t('kill_btn')">
+                </button>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- ═══ SSH CONNECT ═══ -->
+        <div x-show="tab === 'ssh'" class="fade-in">
+          <h2 class="text-sm font-bold text-term-green mb-5 uppercase tracking-wider" x-text="t('ssh_title')"></h2>
+          <template x-if="servers.length === 0">
+            <div class="card-static text-center py-10">
+              <p class="text-term-dim text-xs mb-3">[--] <span x-text="t('ssh_no_server')"></span></p>
+              <button class="btn-primary" @click="switchTab('sshcfg')" x-text="t('ssh_add_server')"></button>
+            </div>
+          </template>
+          <div class="space-y-1.5">
+            <template x-for="(s, i) in servers" :key="i">
+              <div class="card flex items-center justify-between cursor-pointer group" @click="sshConnect(i)">
+                <div class="flex items-center gap-3 flex-1 min-w-0">
+                  <span class="text-xs" :class="serverStatus[i] === true ? 'text-term-green' : serverStatus[i] === false ? 'text-term-red' : 'text-term-dim'"
+                        x-text="serverStatus[i] === true ? '[ON]' : serverStatus[i] === false ? '[--]' : '[..]'"></span>
+                  <div class="min-w-0">
+                    <span class="text-xs text-term-text group-hover:text-term-green transition" x-text="s.name"></span>
+                    <span class="text-[10px] text-term-dim ml-2">
+                      <span x-text="s.host"></span><span x-show="s.port && s.port !== 22" x-text="':' + s.port"></span>
+                    </span>
+                  </div>
+                </div>
+                <span class="text-[10px] text-term-dim opacity-0 group-hover:opacity-100">-></span>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- ═══ SSH CONFIG ═══ -->
+        <div x-show="tab === 'sshcfg'" class="fade-in">
+          <div class="flex items-center justify-between mb-5">
+            <h2 class="text-sm font-bold text-term-green uppercase tracking-wider" x-text="t('sshcfg_title')"></h2>
+            <button class="btn-primary" @click="editingServer = {name:'',host:'',port:22,path:'',key:''}; editingIdx = -1; showServerForm = true" x-text="t('sshcfg_add')">
+            </button>
+          </div>
+          <div class="space-y-1.5">
+            <template x-for="(s, i) in servers" :key="i">
+              <div class="card flex items-center justify-between">
+                <div class="flex items-center gap-3 flex-1 min-w-0">
+                  <span class="text-term-cyan text-xs" x-text="'[' + (i+1) + ']'"></span>
+                  <div class="min-w-0">
+                    <span class="text-xs text-term-text" x-text="s.name"></span>
+                    <div class="text-[10px] text-term-dim mt-0.5 truncate">
+                      <span x-text="s.host"></span>:<span x-text="s.port || 22"></span>
+                      <span x-show="s.path" x-text="' -> ' + s.path"></span>
+                      <span x-show="s.key" class="text-term-amber"> [KEY]</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="flex gap-1.5 shrink-0 ml-3">
+                  <button class="btn-ghost text-[10px]" @click="editServer(i)" x-text="t('btn_edit')"></button>
+                  <button class="btn-danger text-[10px]" @click="deleteServer(i)" x-text="t('btn_del')"></button>
+                </div>
+              </div>
+            </template>
+          </div>
+          <template x-if="servers.length === 0">
+            <div class="card-static text-center py-10">
+              <p class="text-term-dim text-xs">[--] <span x-text="t('sshcfg_no_config')"></span></p>
+            </div>
+          </template>
+
+          <!-- Modal: Server form -->
+          <div x-show="showServerForm" class="fixed inset-0 modal-backdrop flex items-center justify-center z-40"
+               @click.self="showServerForm = false">
+            <div class="modal-panel p-5 w-full max-w-md fade-in">
+              <h3 class="text-xs font-bold text-term-green mb-4" x-text="editingIdx >= 0 ? t('sshcfg_edit_title') : t('sshcfg_add_title')"></h3>
+              <div class="space-y-3">
+                <div>
+                  <label class="text-[10px] text-term-dim mb-1 block uppercase" x-text="t('label_name')"></label>
+                  <input class="input-field" placeholder="Production Server" x-model="editingServer.name">
+                </div>
+                <div>
+                  <label class="text-[10px] text-term-dim mb-1 block uppercase"><span x-text="t('label_host')"></span> <span class="text-term-red">*</span></label>
+                  <input class="input-field" placeholder="user@192.168.1.100" x-model="editingServer.host">
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                  <div>
+                    <label class="text-[10px] text-term-dim mb-1 block uppercase" x-text="t('label_port')"></label>
+                    <input type="number" class="input-field" placeholder="22" x-model.number="editingServer.port">
+                  </div>
+                  <div>
+                    <label class="text-[10px] text-term-dim mb-1 block uppercase" x-text="t('label_ssh_key')"></label>
+                    <input class="input-field" placeholder="~/.ssh/id_rsa" x-model="editingServer.key">
+                  </div>
+                </div>
+                <div>
+                  <label class="text-[10px] text-term-dim mb-1 block uppercase" x-text="t('label_remote_path')"></label>
+                  <input class="input-field" placeholder="/var/www/project" x-model="editingServer.path">
+                </div>
+              </div>
+              <div class="flex justify-end gap-2 mt-5">
+                <button class="btn-ghost" @click="showServerForm = false" x-text="t('btn_cancel')"></button>
+                <button class="btn-primary" @click="saveServer()" :disabled="!editingServer.host" x-text="t('btn_save')"></button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ WINDSURF ═══ -->
+        <div x-show="tab === 'windsurf'" class="fade-in">
+          <div class="flex items-center justify-between mb-5">
+            <h2 class="text-sm font-bold text-term-green uppercase tracking-wider" x-text="t('ws_title')"></h2>
+            <button class="btn-primary" @click="showSetupForm = true" x-text="t('ws_setup')"></button>
+          </div>
+          <div class="space-y-1.5">
+            <template x-for="(p, i) in projects" :key="i">
+              <div class="card flex items-center justify-between">
+                <div class="flex items-center gap-3 flex-1 min-w-0">
+                  <span class="text-xs" :class="p.configured ? 'text-term-green' : 'text-term-amber'"
+                        x-text="p.configured ? '[OK]' : '[..]'"></span>
+                  <div class="min-w-0">
+                    <span class="text-xs text-term-text" x-text="p.name"></span>
+                    <div class="text-[10px] text-term-dim mt-0.5 truncate" x-text="p.path"></div>
+                  </div>
+                </div>
+                <div class="flex gap-1.5 shrink-0 ml-3">
+                  <button class="btn-ghost text-[10px]" @click="editProject(i)" x-text="t('btn_edit')"></button>
+                  <button class="btn-success text-[10px]" @click="openWindsurf(i)" x-text="t('btn_open')"></button>
+                  <button class="btn-danger text-[10px]" @click="removeProject(i)" x-text="t('btn_del')"></button>
+                </div>
+              </div>
+            </template>
+          </div>
+          <template x-if="projects.length === 0">
+            <div class="card-static text-center py-10">
+              <p class="text-term-dim text-xs">[--] <span x-text="t('ws_no_project')"></span></p>
+            </div>
+          </template>
+
+          <!-- Modal: Setup project -->
+          <div x-show="showSetupForm" class="fixed inset-0 modal-backdrop flex items-center justify-center z-40"
+               @click.self="showSetupForm = false">
+            <div class="modal-panel p-5 w-full max-w-md fade-in">
+              <h3 class="text-xs font-bold text-term-green mb-4" x-text="editingProjectIdx >= 0 ? t('ws_edit_title') : t('ws_setup_title')"></h3>
+              <div class="space-y-3">
+                <div>
+                  <label class="text-[10px] text-term-dim mb-1 block uppercase"><span x-text="t('label_path')"></span> <span class="text-term-red">*</span></label>
+                  <input class="input-field" placeholder="D:\projects\my-app" x-model="setupForm.path"
+                         :disabled="editingProjectIdx >= 0">
+                </div>
+                <div>
+                  <label class="text-[10px] text-term-dim mb-1 block uppercase" x-text="t('label_name')"></label>
+                  <input class="input-field" placeholder="my-app" x-model="setupForm.name">
+                </div>
+              </div>
+              <p class="text-[10px] text-term-dim mt-2" x-show="editingProjectIdx < 0" x-text="t('ws_inject_desc')"></p>
+              <div class="flex justify-end gap-2 mt-5">
+                <button class="btn-ghost" @click="showSetupForm = false" x-text="t('btn_cancel')"></button>
+                <button class="btn-primary" @click="editingProjectIdx >= 0 ? updateProject() : setupProject()" :disabled="!setupForm.path || settingUp">
+                  <span x-text="settingUp ? t('btn_working') : (editingProjectIdx >= 0 ? t('btn_save') : t('btn_setup'))"></span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ DASHBOARD ═══ -->
+        <div x-show="tab === 'dashboard'" class="fade-in">
+          <h2 class="text-sm font-bold text-term-green mb-4 uppercase tracking-wider" x-text="t('dash_title')"></h2>
+
+          <!-- Filter buttons -->
+          <div class="flex gap-1.5 mb-4">
+            <button class="filter-btn" :class="sessionFilter === 'all' && 'active'" @click="sessionFilter = 'all'">
+              ALL:<span x-text="sessions.length"></span>
+            </button>
+            <button class="filter-btn" :class="sessionFilter === 'waiting' && 'active'" @click="sessionFilter = 'waiting'">
+              WAIT:<span x-text="sessions.filter(s=>s.status==='waiting'||s.status==='completed').length"></span>
+            </button>
+            <button class="filter-btn" :class="sessionFilter === 'need_confirm' && 'active'" @click="sessionFilter = 'need_confirm'">
+              CONFIRM:<span x-text="sessions.filter(s=>s.status==='need_confirm').length"></span>
+            </button>
+            <button class="filter-btn" :class="sessionFilter === 'blocked' && 'active'" @click="sessionFilter = 'blocked'">
+              BLOCK:<span x-text="sessions.filter(s=>s.status==='blocked').length"></span>
+            </button>
+            <button class="filter-btn" :class="sessionFilter === 'stuck' && 'active'" @click="sessionFilter = 'stuck'">
+              STUCK:<span x-text="sessions.filter(s=>s.status==='stuck').length"></span>
+            </button>
+          </div>
+
+          <template x-if="filteredSessions.length === 0">
+            <div class="card-static text-center py-10">
+              <p class="text-term-dim text-xs">[--] <span x-text="t('dash_no_session')"></span></p>
+            </div>
+          </template>
+
+          <template x-for="(group, project) in filteredGroupedSessions" :key="project">
+            <div class="mb-6">
+              <div class="flex items-center gap-2 mb-2 px-1">
+                <span class="text-[10px] text-term-dim uppercase tracking-widest" x-text="'// ' + project"></span>
+              </div>
+              <div class="space-y-1.5">
+                <template x-for="s in group" :key="s.session_id">
+                  <div class="card-static">
+                    <div class="flex items-start justify-between">
+                      <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 mb-1.5">
+                          <span class="text-[10px] font-bold"
+                                :class="{
+                                  'text-term-green': s.status === 'executing',
+                                  'text-term-amber': s.status === 'waiting' || s.status === 'completed',
+                                  'text-term-red': s.status === 'need_confirm' || s.status === 'stuck' || s.status === 'blocked',
+                                  'text-term-dim': s.status === 'cancelled'
+                                }"
+                                x-text="'[' + s.status.toUpperCase() + ']'"></span>
+                        </div>
+                        <p class="text-xs text-term-text leading-relaxed" x-text="s.task"></p>
+                        <p x-show="s.questions" class="text-[10px] text-term-amber mt-1.5">
+                          ? <span x-text="s.questions"></span>
+                        </p>
+                      </div>
+                      <div class="flex gap-1 ml-3 shrink-0">
+                        <button class="btn-ghost text-[10px]" @click="markNormal(s.session_id)" x-show="s.status === 'stuck'" x-text="t('btn_fix')"></button>
+                        <button class="btn-ghost text-[10px]" @click="copyContext(s.session_id)" x-text="t('btn_cpy')"></button>
+                        <button class="btn-danger text-[10px]" @click="deleteSession(s.session_id)" x-text="t('btn_del')"></button>
+                      </div>
+                    </div>
+                    <!-- Reply -->
+                    <div x-show="s.status === 'waiting' || s.status === 'need_confirm' || s.status === 'completed' || s.status === 'blocked'" class="mt-3 flex gap-2">
+                      <input class="input-field flex-1" :placeholder="t('dash_reply_ph')"
+                             x-model="replyTexts[s.session_id]" @keydown.enter="sendReply(s.session_id)">
+                      <button class="btn-primary" @click="sendReply(s.session_id)" x-text="t('btn_send')"></button>
+                      <button class="btn-danger" @click="cancelSession(s.session_id)">X</button>
+                    </div>
+                    <div x-show="s.reply" class="mt-2 text-[10px] text-term-dim">
+                      > <span x-text="s.reply"></span>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <!-- ═══ SETTINGS ═══ -->
+        <div x-show="tab === 'settings'" class="fade-in">
+          <h2 class="text-sm font-bold text-term-green mb-5 uppercase tracking-wider" x-text="t('cfg_title')"></h2>
+          <div class="card-static space-y-4">
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="text-[10px] text-term-dim block uppercase" x-text="t('cfg_lang')"></label>
+                <p class="text-[10px] text-term-dim mt-0.5" x-text="t('cfg_lang_desc')"></p>
+              </div>
+              <div class="flex gap-1">
+                <button class="px-2 py-1 text-[10px] rounded border font-bold transition-all"
+                        :class="lang === 'zh' ? 'border-term-green text-term-green bg-term-select' : 'border-term-border text-term-dim'"
+                        @click="setLang('zh')">中</button>
+                <button class="px-2 py-1 text-[10px] rounded border font-bold transition-all"
+                        :class="lang === 'en' ? 'border-term-green text-term-green bg-term-select' : 'border-term-border text-term-dim'"
+                        @click="setLang('en')">EN</button>
+              </div>
+            </div>
+            <div class="border-t border-term-border"></div>
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="text-[10px] text-term-dim block uppercase" x-text="t('cfg_autostart')"></label>
+                <p class="text-[10px] text-term-dim mt-0.5" x-text="t('cfg_autostart_desc')"></p>
+              </div>
+              <button class="relative w-10 h-5 rounded-full transition-colors duration-200 focus:outline-none"
+                      :class="autostart ? 'bg-term-green/30 border border-term-green/50' : 'bg-term-border border border-term-border'"
+                      @click="toggleAutostart()" :disabled="autostartLoading">
+                <span class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full transition-transform duration-200"
+                      :class="autostart ? 'translate-x-5 bg-term-green' : 'translate-x-0 bg-term-dim'"></span>
+              </button>
+            </div>
+            <div class="border-t border-term-border"></div>
+            <div>
+              <label class="text-[10px] text-term-dim mb-1 block uppercase" x-text="t('cfg_port')"></label>
+              <input type="number" class="input-field" x-model.number="settingsForm.port" placeholder="9000">
+              <p class="text-[10px] text-term-dim mt-1" x-text="t('cfg_port_desc')"></p>
+            </div>
+            <div>
+              <label class="text-[10px] text-term-dim mb-1 block uppercase" x-text="t('cfg_stuck')"></label>
+              <input type="number" class="input-field" x-model.number="settingsForm.stuck_timeout" placeholder="5">
+            </div>
+            <div>
+              <label class="text-[10px] text-term-dim mb-1 block uppercase" x-text="t('cfg_expire')"></label>
+              <input type="number" class="input-field" x-model.number="settingsForm.session_expire_days" placeholder="7">
+            </div>
+            <div>
+              <label class="text-[10px] text-term-dim mb-1 block uppercase" x-text="t('cfg_ws_path')"></label>
+              <input class="input-field" x-model="settingsForm.windsurf_path" placeholder="auto-detect">
+            </div>
+            <div class="pt-2">
+              <button class="btn-primary" @click="saveSettingsForm()" x-text="t('btn_save')"></button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => { lucide.createIcons(); });
+document.addEventListener('alpine:initialized', () => {
+  setTimeout(() => lucide.createIcons(), 50);
+});
+
+const _i18n = {
+  zh: {
+    nav_kill:'KILL PORT', nav_ssh:'SSH', nav_sshcfg:'SSH CFG', nav_windsurf:'WINDSURF',
+    nav_board:'BOARD', nav_config:'CONFIG', nav_clean:'CLEAN',
+    kill_title:'// Kill Port',
+    kill_desc:'输入端口号，查找并终止监听进程',
+    kill_killing:'KILLING...', kill_btn:'KILL',
+    kill_no_process:'[--] 端口 {0} 无监听进程',
+    kill_terminated:'[OK] 已终止 {0} 个进程',
+    kill_listening:'Listening', kill_search:'search...',
+    kill_loading:'LOADING', kill_refresh:'REFRESH',
+    kill_no_data:'暂无数据',
+    ssh_title:'// SSH Connect', ssh_no_server:'暂无服务器', ssh_add_server:'ADD SERVER',
+    sshcfg_title:'// SSH Config', sshcfg_add:'+ ADD',
+    sshcfg_no_config:'暂无服务器配置',
+    sshcfg_edit_title:'// EDIT SERVER', sshcfg_add_title:'// ADD SERVER',
+    label_name:'Name', label_host:'Host', label_port:'Port',
+    label_ssh_key:'SSH Key', label_remote_path:'Remote Path',
+    btn_cancel:'CANCEL', btn_save:'SAVE', btn_edit:'EDIT', btn_del:'DEL',
+    ws_title:'// Windsurf', ws_setup:'+ SETUP',
+    ws_no_project:'暂无项目',
+    ws_edit_title:'// EDIT PROJECT', ws_setup_title:'// SETUP PROJECT',
+    ws_inject_desc:'自动注入 .windsurf/workflows/ 规则和上报脚本',
+    label_path:'Path', btn_open:'OPEN', btn_setup:'SETUP', btn_working:'WORKING...',
+    dash_title:'// Dashboard', dash_no_session:'暂无活跃会话',
+    btn_fix:'FIX', btn_cpy:'CPY', btn_send:'SEND', dash_reply_ph:'reply...',
+    cfg_title:'// Config',
+    cfg_autostart:'Auto Start', cfg_autostart_desc:'开机时自动启动 Listary 工具集',
+    cfg_port:'Server Port', cfg_port_desc:'默认 9000，修改后重启生效',
+    cfg_stuck:'Stuck Timeout (min)', cfg_expire:'Session Expire (days)',
+    cfg_ws_path:'Windsurf Path', cfg_lang:'Language', cfg_lang_desc:'界面显示语言',
+    toast_killed:'终止 {0} 个进程', toast_no_listen:'端口 {0} 无监听',
+    toast_connected:'连接: {0}', toast_server_updated:'服务器已更新',
+    toast_server_added:'服务器已添加', toast_deleted:'已删除: {0}',
+    toast_project_updated:'项目已更新: {0}', toast_project_configured:'项目已配置: {0}',
+    toast_opened:'已打开: {0}', toast_removed:'已移除: {0}',
+    toast_session_updated:'更新: {0}',
+    toast_reply_sent:'回复已发送', toast_cancelled:'已取消',
+    toast_fixed:'已修复', toast_copied:'已复制', toast_closed:'已关闭',
+    toast_cleaned:'已清理 {0} 个会话', toast_settings_saved:'设置已保存，重启生效',
+    toast_autostart_on:'已启用开机自启', toast_autostart_off:'已关闭开机自启',
+    confirm_clean:'清理所有历史数据？',
+    confirm_delete_server:'删除「{0}」？', confirm_remove_project:'移除「{0}」？',
+  },
+  en: {
+    nav_kill:'KILL PORT', nav_ssh:'SSH', nav_sshcfg:'SSH CFG', nav_windsurf:'WINDSURF',
+    nav_board:'BOARD', nav_config:'CONFIG', nav_clean:'CLEAN',
+    kill_title:'// Kill Port',
+    kill_desc:'Enter port number to find and terminate listening process',
+    kill_killing:'KILLING...', kill_btn:'KILL',
+    kill_no_process:'[--] Port {0} has no listening process',
+    kill_terminated:'[OK] Terminated {0} process(es)',
+    kill_listening:'Listening', kill_search:'search...',
+    kill_loading:'LOADING', kill_refresh:'REFRESH',
+    kill_no_data:'No data',
+    ssh_title:'// SSH Connect', ssh_no_server:'No servers', ssh_add_server:'ADD SERVER',
+    sshcfg_title:'// SSH Config', sshcfg_add:'+ ADD',
+    sshcfg_no_config:'No server configuration',
+    sshcfg_edit_title:'// EDIT SERVER', sshcfg_add_title:'// ADD SERVER',
+    label_name:'Name', label_host:'Host', label_port:'Port',
+    label_ssh_key:'SSH Key', label_remote_path:'Remote Path',
+    btn_cancel:'CANCEL', btn_save:'SAVE', btn_edit:'EDIT', btn_del:'DEL',
+    ws_title:'// Windsurf', ws_setup:'+ SETUP',
+    ws_no_project:'No projects',
+    ws_edit_title:'// EDIT PROJECT', ws_setup_title:'// SETUP PROJECT',
+    ws_inject_desc:'Auto-inject .windsurf/workflows/ rules and report script',
+    label_path:'Path', btn_open:'OPEN', btn_setup:'SETUP', btn_working:'WORKING...',
+    dash_title:'// Dashboard', dash_no_session:'No active sessions',
+    btn_fix:'FIX', btn_cpy:'CPY', btn_send:'SEND', dash_reply_ph:'reply...',
+    cfg_title:'// Config',
+    cfg_autostart:'Auto Start', cfg_autostart_desc:'Launch Listary Tools on system startup',
+    cfg_port:'Server Port', cfg_port_desc:'Default 9000, restart required after change',
+    cfg_stuck:'Stuck Timeout (min)', cfg_expire:'Session Expire (days)',
+    cfg_ws_path:'Windsurf Path', cfg_lang:'Language', cfg_lang_desc:'Interface display language',
+    toast_killed:'Terminated {0} process(es)', toast_no_listen:'Port {0} not listening',
+    toast_connected:'Connected: {0}', toast_server_updated:'Server updated',
+    toast_server_added:'Server added', toast_deleted:'Deleted: {0}',
+    toast_project_updated:'Project updated: {0}', toast_project_configured:'Project configured: {0}',
+    toast_opened:'Opened: {0}', toast_removed:'Removed: {0}',
+    toast_session_updated:'Updated: {0}',
+    toast_reply_sent:'Reply sent', toast_cancelled:'Cancelled',
+    toast_fixed:'Fixed', toast_copied:'Copied', toast_closed:'Closed',
+    toast_cleaned:'Cleaned {0} session(s)', toast_settings_saved:'Settings saved, restart required',
+    toast_autostart_on:'Auto-start enabled', toast_autostart_off:'Auto-start disabled',
+    confirm_clean:'Clean all history data?',
+    confirm_delete_server:'Delete "{0}"?', confirm_remove_project:'Remove "{0}"?',
+  }
+};
+
+function app() {
+  return {
+    tab: 'kill',
+    toasts: [],
+    lang: localStorage.getItem('listary_lang') || 'zh',
+    killPort: '', killing: false, killResult: null,
+    listeningPorts: [], portsTotal: 0, loadingPorts: false, portSearch: '',
+    servers: [], serverStatus: {},
+    showServerForm: false, editingServer: {}, editingIdx: -1,
+    projects: [], showSetupForm: false, settingUp: false,
+    setupForm: { path: '', name: '' }, editingProjectIdx: -1,
+    sessions: [], replyTexts: {}, ws: null,
+    sessionFilter: 'all',
+    settingsForm: { port: 9000, stuck_timeout: 5, session_expire_days: 7, windsurf_path: '' },
+    autostart: false, autostartLoading: false,
+
+    t(key, ...args) {
+      let s = (_i18n[this.lang] || _i18n.zh)[key] || key;
+      args.forEach((v, i) => { s = s.replace(`{${i}}`, v); });
+      return s;
+    },
+    setLang(l) {
+      this.lang = l;
+      localStorage.setItem('listary_lang', l);
+      document.documentElement.lang = l === 'zh' ? 'zh-CN' : 'en';
+      this.api('POST', '/api/settings', { lang: l }).catch(() => {});
+    },
+
+    get filteredPorts() {
+      if (!this.portSearch) return this.listeningPorts;
+      const q = this.portSearch.toLowerCase();
+      return this.listeningPorts.filter(p =>
+        String(p.port).includes(q) || p.name.toLowerCase().includes(q)
+      );
+    },
+
+    get filteredSessions() {
+      if (this.sessionFilter === 'all') return this.sessions;
+      if (this.sessionFilter === 'waiting') return this.sessions.filter(s => s.status === 'waiting' || s.status === 'completed');
+      return this.sessions.filter(s => s.status === this.sessionFilter);
+    },
+
+    get filteredGroupedSessions() {
+      const g = {};
+      this.filteredSessions.forEach(s => { (g[s.project] = g[s.project] || []).push(s); });
+      return g;
+    },
+
+    init() {
+      document.documentElement.lang = this.lang === 'zh' ? 'zh-CN' : 'en';
+      this.connectWS(); this.loadListeningPorts();
+    },
+
+    switchTab(t) {
+      this.tab = t;
+      if (t === 'kill') this.loadListeningPorts();
+      this.$nextTick(() => lucide.createIcons());
+    },
+
+    toast(msg, type = 'success') {
+      this.toasts.push({ id: Date.now(), msg, type });
+    },
+
+    async api(method, url, body = null) {
+      const opts = { method, headers: { 'Content-Type': 'application/json' } };
+      if (body) opts.body = JSON.stringify(body);
+      const res = await fetch(url, opts);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      return data;
+    },
+
+    async loadListeningPorts() {
+      this.loadingPorts = true;
+      try {
+        const r = await this.api('GET', '/api/listening-ports');
+        this.listeningPorts = r.ports;
+        this.portsTotal = r.total;
+      } catch (e) { /* ignore */ }
+      this.loadingPorts = false;
+      this.$nextTick(() => lucide.createIcons());
+    },
+
+    async doKill() {
+      if (!this.killPort) return;
+      this.killing = true; this.killResult = null;
+      try {
+        this.killResult = await this.api('POST', '/api/kill-port', { port: parseInt(this.killPort) });
+        this.toast(this.killResult.count > 0 ? this.t('toast_killed', this.killResult.count) : this.t('toast_no_listen', this.killPort),
+          this.killResult.count > 0 ? 'success' : 'info');
+      } catch (e) { this.toast(e.message, 'error'); }
+      this.killing = false;
+      this.$nextTick(() => lucide.createIcons());
+    },
+
+    async loadServers() {
+      try { this.servers = await this.api('GET', '/api/servers'); } catch (e) { this.toast(e.message, 'error'); }
+      this.$nextTick(() => lucide.createIcons());
+      this.pingServers();
+    },
+    async pingServers() {
+      try {
+        const r = await this.api('GET', '/api/servers/ping');
+        const s = {}; r.status.forEach((v, i) => s[i] = v);
+        this.serverStatus = s;
+      } catch (e) { /* ignore */ }
+    },
+    async sshConnect(i) {
+      try { const r = await this.api('POST', `/api/ssh-connect/${i}`); this.toast(this.t('toast_connected', r.server)); }
+      catch (e) { this.toast(e.message, 'error'); }
+    },
+    editServer(i) {
+      this.editingServer = { ...this.servers[i] };
+      this.editingIdx = i;
+      this.showServerForm = true;
+    },
+    async saveServer() {
+      try {
+        let r;
+        if (this.editingIdx >= 0) { r = await this.api('PUT', `/api/servers/${this.editingIdx}`, this.editingServer); this.toast(this.t('toast_server_updated')); }
+        else { r = await this.api('POST', '/api/servers', this.editingServer); this.toast(this.t('toast_server_added')); }
+        this.servers = r.servers; this.showServerForm = false;
+      } catch (e) { this.toast(e.message, 'error'); }
+      this.$nextTick(() => lucide.createIcons());
+    },
+    async deleteServer(i) {
+      if (!confirm(this.t('confirm_delete_server', this.servers[i].name))) return;
+      try { const r = await this.api('DELETE', `/api/servers/${i}`); this.servers = r.servers; this.toast(this.t('toast_deleted', r.removed)); }
+      catch (e) { this.toast(e.message, 'error'); }
+      this.$nextTick(() => lucide.createIcons());
+    },
+
+    async loadProjects() {
+      try { this.projects = await this.api('GET', '/api/projects'); } catch (e) { this.toast(e.message, 'error'); }
+      this.$nextTick(() => lucide.createIcons());
+    },
+    editProject(i) {
+      this.editingProjectIdx = i;
+      this.setupForm = { path: this.projects[i].path, name: this.projects[i].name };
+      this.showSetupForm = true;
+    },
+    async updateProject() {
+      this.settingUp = true;
+      try {
+        const i = this.editingProjectIdx;
+        await this.api('DELETE', `/api/projects/${i}`);
+        const r = await this.api('POST', '/api/projects/setup', this.setupForm);
+        this.projects = r.projects; this.showSetupForm = false;
+        this.setupForm = { path: '', name: '' }; this.editingProjectIdx = -1;
+        this.toast(this.t('toast_project_updated', r.project));
+      } catch (e) { this.toast(e.message, 'error'); }
+      this.settingUp = false;
+      this.$nextTick(() => lucide.createIcons());
+    },
+    async setupProject() {
+      this.settingUp = true;
+      try {
+        const r = await this.api('POST', '/api/projects/setup', this.setupForm);
+        this.projects = r.projects; this.showSetupForm = false;
+        this.setupForm = { path: '', name: '' }; this.editingProjectIdx = -1;
+        this.toast(this.t('toast_project_configured', r.project));
+      } catch (e) { this.toast(e.message, 'error'); }
+      this.settingUp = false;
+      this.$nextTick(() => lucide.createIcons());
+    },
+    async openWindsurf(i) {
+      try { const r = await this.api('POST', `/api/projects/${i}/open`); this.toast(this.t('toast_opened', r.project)); }
+      catch (e) { this.toast(e.message, 'error'); }
+    },
+    async removeProject(i) {
+      if (!confirm(this.t('confirm_remove_project', this.projects[i].name))) return;
+      try { const r = await this.api('DELETE', `/api/projects/${i}`); this.projects = r.projects; this.toast(this.t('toast_removed', r.removed)); }
+      catch (e) { this.toast(e.message, 'error'); }
+      this.$nextTick(() => lucide.createIcons());
+    },
+
+    async loadSessions() {
+      try { this.sessions = await this.api('GET', '/api/sessions'); } catch (e) {}
+      this.$nextTick(() => lucide.createIcons());
+    },
+    _wsDelay: 1000,
+    connectWS() {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      this.ws = new WebSocket(`${proto}//${location.host}/ws`);
+      this.ws.onopen = () => { this._wsDelay = 1000; };
+      this.ws.onmessage = (e) => {
+        const d = JSON.parse(e.data);
+        if (d.type === 'init' && d.sessions) {
+          this.sessions = d.sessions;
+        } else if (d.type === 'session_updated' && d.session) {
+          const idx = this.sessions.findIndex(s => s.session_id === d.session_id);
+          if (idx >= 0) this.sessions.splice(idx, 1, d.session);
+          else this.sessions.unshift(d.session);
+          this.toast(this.t('toast_session_updated', d.session_id.slice(0, 8) + '...'), 'info');
+        } else if (d.type === 'session_deleted') {
+          this.sessions = this.sessions.filter(s => s.session_id !== d.session_id);
+        } else if (d.type === 'all_cleaned') {
+          this.sessions = [];
+        } else if (d.sessions) {
+          this.sessions = d.sessions;
+        }
+        this.$nextTick(() => lucide.createIcons());
+      };
+      this.ws.onclose = () => {
+        setTimeout(() => this.connectWS(), this._wsDelay);
+        this._wsDelay = Math.min(this._wsDelay * 1.5, 30000);
+      };
+    },
+    async sendReply(sid) {
+      const text = this.replyTexts[sid]; if (!text) return;
+      try { await this.api('POST', `/api/reply/${sid}`, { reply: text }); this.replyTexts[sid] = ''; this.toast(this.t('toast_reply_sent')); }
+      catch (e) { this.toast(e.message, 'error'); }
+    },
+    async cancelSession(sid) {
+      try { await this.api('POST', `/api/reply/${sid}`, { reply: '[CANCEL]' }); this.toast(this.t('toast_cancelled')); }
+      catch (e) { this.toast(e.message, 'error'); }
+    },
+    async markNormal(sid) {
+      try { await this.api('PATCH', `/api/sessions/${sid}`, { status: 'executing' }); this.toast(this.t('toast_fixed')); }
+      catch (e) { this.toast(e.message, 'error'); }
+    },
+    async copyContext(sid) {
+      try { const r = await this.api('GET', `/api/sessions/${sid}/context`); await navigator.clipboard.writeText(r.context); this.toast(this.t('toast_copied')); }
+      catch (e) { this.toast(e.message, 'error'); }
+    },
+    async deleteSession(sid) {
+      try { await this.api('DELETE', `/api/sessions/${sid}`); this.toast(this.t('toast_closed')); }
+      catch (e) { this.toast(e.message, 'error'); }
+    },
+    async cleanAll() {
+      if (!confirm(this.t('confirm_clean'))) return;
+      try { const r = await this.api('DELETE', '/api/sessions'); this.sessions = []; this.toast(this.t('toast_cleaned', r.cleaned)); }
+      catch (e) { this.toast(e.message, 'error'); }
+    },
+
+    async loadSettings() {
+      try {
+        this.settingsForm = await this.api('GET', '/api/settings');
+        if (this.settingsForm.lang && this.settingsForm.lang !== this.lang) {
+          this.setLang(this.settingsForm.lang);
+        }
+      } catch (e) {}
+      try { const r = await this.api('GET', '/api/autostart'); this.autostart = r.enabled; } catch (e) {}
+    },
+    async toggleAutostart() {
+      this.autostartLoading = true;
+      try {
+        const r = await this.api('POST', '/api/autostart', { enabled: !this.autostart });
+        this.autostart = r.enabled;
+        this.toast(r.enabled ? this.t('toast_autostart_on') : this.t('toast_autostart_off'));
+      } catch (e) { this.toast(e.message, 'error'); }
+      this.autostartLoading = false;
+    },
+    async saveSettingsForm() {
+      try { await this.api('POST', '/api/settings', this.settingsForm); this.toast(this.t('toast_settings_saved')); }
+      catch (e) { this.toast(e.message, 'error'); }
+    },
+  };
+}
+</script>
+</body>
+</html>

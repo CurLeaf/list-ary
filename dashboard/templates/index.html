@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Windsurf 调度看板</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        dark: { 800: '#1a1a2e', 900: '#0f0f23', 700: '#16213e' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        [x-cloak] { display: none !important; }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+        .status-executing { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+        .status-waiting { background: #eab308; box-shadow: 0 0 6px #eab308; }
+        .status-need_confirm { background: #f97316; box-shadow: 0 0 6px #f97316; }
+        .status-stuck { background: #ef4444; box-shadow: 0 0 6px #ef4444; animation: pulse-red 1.5s infinite; }
+        .status-cancelled { background: #6b7280; }
+        @keyframes pulse-red { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        body { background: #0f0f23; }
+    </style>
+</head>
+<body class="bg-dark-900 text-gray-200 min-h-screen" x-data="dashboard()" x-init="init()" x-cloak>
+
+    <!-- Header -->
+    <header class="bg-dark-800 border-b border-gray-700 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
+        <div class="flex items-center gap-3">
+            <span class="text-2xl">🏄</span>
+            <h1 class="text-xl font-bold text-white">Windsurf 调度看板</h1>
+            <span class="text-sm text-gray-500" x-text="'(' + totalSessions + ' 个会话)'"></span>
+        </div>
+        <div class="flex items-center gap-3">
+            <span class="text-xs px-2 py-1 rounded" :class="connected ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'">
+                <span x-text="connected ? '● 已连接' : '○ 已断开'"></span>
+            </span>
+            <button @click="cleanAll()" class="text-sm px-3 py-1.5 bg-red-900 hover:bg-red-800 text-red-300 rounded transition">
+                🧹 清理全部
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-5xl mx-auto px-4 py-6 space-y-6">
+
+        <!-- Empty State -->
+        <div x-show="totalSessions === 0" class="text-center py-20 text-gray-500">
+            <div class="text-5xl mb-4">📭</div>
+            <p class="text-lg">暂无活跃会话</p>
+            <p class="text-sm mt-2">等待 Windsurf 上报任务...</p>
+        </div>
+
+        <!-- Project Groups -->
+        <template x-for="(sessions, project) in groupedSessions" :key="project">
+            <div class="bg-dark-800 rounded-lg border border-gray-700 overflow-hidden">
+                <!-- Project Header -->
+                <div class="px-4 py-3 bg-dark-700 border-b border-gray-700 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <span>📁</span>
+                        <span class="font-semibold text-white" x-text="project"></span>
+                        <span class="text-xs text-gray-500" x-text="'(' + sessions.length + ' 个会话)'"></span>
+                    </div>
+                </div>
+
+                <!-- Session Cards -->
+                <div class="divide-y divide-gray-700">
+                    <template x-for="session in sessions" :key="session.session_id">
+                        <div class="p-4 hover:bg-dark-700/50 transition">
+                            <!-- Session Header -->
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="flex items-center gap-2">
+                                    <span class="status-dot" :class="'status-' + session.status"></span>
+                                    <span class="text-sm font-mono text-gray-400" x-text="session.session_id"></span>
+                                    <span class="text-xs px-2 py-0.5 rounded" :class="statusBadgeClass(session.status)" x-text="statusLabel(session.status)"></span>
+                                </div>
+                                <div class="flex items-center gap-1">
+                                    <!-- Mark as normal (for stuck sessions) -->
+                                    <button x-show="session.status === 'stuck'"
+                                            @click="patchStatus(session.session_id, 'executing')"
+                                            class="text-xs px-2 py-1 bg-green-900 hover:bg-green-800 text-green-300 rounded transition"
+                                            title="标记为正常">🔄</button>
+                                    <!-- Copy context -->
+                                    <button @click="copyContext(session.session_id)"
+                                            class="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded transition"
+                                            title="复制上下文">📋</button>
+                                    <!-- Cancel (for waiting/need_confirm) -->
+                                    <button x-show="session.status === 'waiting' || session.status === 'need_confirm'"
+                                            @click="sendReply(session.session_id, '[CANCEL]')"
+                                            class="text-xs px-2 py-1 bg-orange-900 hover:bg-orange-800 text-orange-300 rounded transition"
+                                            title="取消任务">❌</button>
+                                    <!-- Delete session -->
+                                    <button @click="deleteSession(session.session_id)"
+                                            class="text-xs px-2 py-1 bg-red-900 hover:bg-red-800 text-red-300 rounded transition"
+                                            title="关闭会话">🗑️</button>
+                                </div>
+                            </div>
+
+                            <!-- Task Info -->
+                            <div class="ml-5 space-y-1">
+                                <div class="text-sm">
+                                    <span class="text-gray-500">任务:</span>
+                                    <span class="text-gray-200" x-text="session.task || '无'"></span>
+                                </div>
+                                <div x-show="session.previous_request" class="text-sm">
+                                    <span class="text-gray-500">上一需求:</span>
+                                    <span class="text-gray-400" x-text="session.previous_request"></span>
+                                </div>
+                                <div x-show="session.questions && session.questions.length > 0" class="text-sm">
+                                    <span class="text-gray-500">疑问:</span>
+                                    <template x-for="q in session.questions" :key="q">
+                                        <span class="inline-block bg-yellow-900/30 text-yellow-300 text-xs px-2 py-0.5 rounded mr-1 mt-1" x-text="q"></span>
+                                    </template>
+                                </div>
+                                <div x-show="session.reply" class="text-sm">
+                                    <span class="text-gray-500">回复:</span>
+                                    <span class="text-green-400" x-text="session.reply"></span>
+                                </div>
+                                <div class="text-xs text-gray-600 mt-1">
+                                    <span x-text="'最后活跃: ' + formatTime(session.last_active)"></span>
+                                </div>
+                            </div>
+
+                            <!-- Reply Input (for waiting / need_confirm) -->
+                            <div x-show="session.status === 'waiting' || session.status === 'need_confirm'" class="ml-5 mt-3 flex gap-2">
+                                <input type="text"
+                                       :id="'reply-' + session.session_id"
+                                       class="flex-1 bg-dark-900 border border-gray-600 rounded px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+                                       placeholder="输入你的指令..."
+                                       @keydown.enter="submitReply(session.session_id)">
+                                <button @click="submitReply(session.session_id)"
+                                        class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded transition font-medium">
+                                    发送
+                                </button>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </template>
+    </main>
+
+    <!-- Toast Notification -->
+    <div x-show="toast.show" x-transition
+         class="fixed bottom-6 right-6 bg-dark-700 border border-gray-600 rounded-lg px-4 py-3 shadow-xl max-w-sm z-50">
+        <p class="text-sm" x-text="toast.message"></p>
+    </div>
+
+    <script>
+        function dashboard() {
+            return {
+                sessions: [],
+                connected: false,
+                ws: null,
+                toast: { show: false, message: '' },
+
+                get totalSessions() {
+                    return this.sessions.length;
+                },
+
+                get groupedSessions() {
+                    const groups = {};
+                    for (const s of this.sessions) {
+                        if (!groups[s.project]) groups[s.project] = [];
+                        groups[s.project].push(s);
+                    }
+                    return groups;
+                },
+
+                init() {
+                    this.connectWS();
+                    // 初始加载数据
+                    fetch('/api/sessions').then(r => r.json()).then(data => {
+                        this.sessions = data;
+                    });
+                },
+
+                connectWS() {
+                    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    this.ws = new WebSocket(`${proto}//${location.host}/ws`);
+                    this.ws.onopen = () => { this.connected = true; };
+                    this.ws.onclose = () => {
+                        this.connected = false;
+                        setTimeout(() => this.connectWS(), 3000);
+                    };
+                    this.ws.onmessage = (e) => {
+                        const msg = JSON.parse(e.data);
+                        if (msg.sessions !== undefined) {
+                            this.sessions = msg.sessions;
+                        }
+                        if (msg.type === 'new_report') {
+                            this.showToast('📋 新任务上报');
+                        } else if (msg.type === 'stuck_detected') {
+                            this.showToast('🔴 检测到卡死会话');
+                        }
+                    };
+                },
+
+                statusLabel(status) {
+                    const map = {
+                        executing: '执行中',
+                        waiting: '等待指令',
+                        need_confirm: '待确认',
+                        stuck: '疑似卡死',
+                        cancelled: '已取消',
+                    };
+                    return map[status] || status;
+                },
+
+                statusBadgeClass(status) {
+                    const map = {
+                        executing: 'bg-green-900/50 text-green-300',
+                        waiting: 'bg-yellow-900/50 text-yellow-300',
+                        need_confirm: 'bg-orange-900/50 text-orange-300',
+                        stuck: 'bg-red-900/50 text-red-300',
+                        cancelled: 'bg-gray-700 text-gray-400',
+                    };
+                    return map[status] || 'bg-gray-700 text-gray-400';
+                },
+
+                formatTime(iso) {
+                    if (!iso) return '未知';
+                    try {
+                        const d = new Date(iso);
+                        return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                    } catch { return iso; }
+                },
+
+                async submitReply(sessionId) {
+                    const input = document.getElementById('reply-' + sessionId);
+                    const reply = input?.value?.trim();
+                    if (!reply) return;
+                    await this.sendReply(sessionId, reply);
+                    if (input) input.value = '';
+                },
+
+                async sendReply(sessionId, reply) {
+                    await fetch(`/api/reply/${sessionId}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ reply }),
+                    });
+                },
+
+                async patchStatus(sessionId, status) {
+                    await fetch(`/api/sessions/${sessionId}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status }),
+                    });
+                },
+
+                async copyContext(sessionId) {
+                    const res = await fetch(`/api/sessions/${sessionId}/context`);
+                    const data = await res.json();
+                    if (data.context) {
+                        await navigator.clipboard.writeText(data.context);
+                        this.showToast('📋 上下文已复制到剪贴板');
+                    }
+                },
+
+                async deleteSession(sessionId) {
+                    await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+                },
+
+                async cleanAll() {
+                    if (!confirm('确定要清理所有会话吗？')) return;
+                    await fetch('/api/sessions', { method: 'DELETE' });
+                    this.showToast('🧹 已清理所有会话');
+                },
+
+                showToast(message) {
+                    this.toast.message = message;
+                    this.toast.show = true;
+                    setTimeout(() => { this.toast.show = false; }, 3000);
+                },
+            };
+        }
+    </script>
+</body>
+</html>
