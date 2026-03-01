@@ -14,16 +14,32 @@ router = APIRouter(tags=["windsurf"])
 @router.get("/browse-folder")
 async def browse_folder():
     """打开原生文件夹选择对话框"""
+    import sys
 
     def _pick() -> str:
-        import tkinter as tk
-        from tkinter import filedialog
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-        folder = filedialog.askdirectory(title="选择项目文件夹")
-        root.destroy()
-        return folder or ""
+        if sys.platform == "win32":
+            import subprocess
+            ps_script = (
+                "Add-Type -AssemblyName System.Windows.Forms; "
+                "$d = New-Object System.Windows.Forms.FolderBrowserDialog; "
+                "$d.Description = '选择项目文件夹'; "
+                "$d.ShowNewFolderButton = $true; "
+                "if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath } else { '' }"
+            )
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", ps_script],
+                capture_output=True, text=True, timeout=120,
+            )
+            return result.stdout.strip()
+        else:
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+            folder = filedialog.askdirectory(title="选择项目文件夹")
+            root.destroy()
+            return folder or ""
 
     path = await asyncio.to_thread(_pick)
 

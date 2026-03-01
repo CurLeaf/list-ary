@@ -3,6 +3,7 @@ Listary 工具集 — 全局配置
 所有常量和用户设置集中管理，各模块 from config import XXX
 """
 
+import copy
 import json
 import os
 import socket
@@ -32,7 +33,7 @@ _settings_cache: dict = {"data": None, "ts": 0.0, "ttl": 10.0}
 def load_settings() -> dict:
     now = time.time()
     if _settings_cache["data"] is not None and now - _settings_cache["ts"] < _settings_cache["ttl"]:
-        return _settings_cache["data"]
+        return copy.deepcopy(_settings_cache["data"])
     p = _settings_path()
     if os.path.exists(p):
         try:
@@ -40,7 +41,7 @@ def load_settings() -> dict:
                 result = json.load(f)
                 _settings_cache["data"] = result
                 _settings_cache["ts"] = now
-                return result
+                return copy.deepcopy(result)
         except (json.JSONDecodeError, OSError):
             pass
     return {}

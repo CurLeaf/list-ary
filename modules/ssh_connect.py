@@ -1,4 +1,5 @@
 import os
+import shlex
 import subprocess
 import sys
 from rich.console import Console
@@ -32,7 +33,7 @@ def connect(server: dict) -> None:
 
     remote_cmd = ""
     if server.get("path"):
-        remote_cmd = f"cd {server['path']} && exec $SHELL"
+        remote_cmd = f"cd {shlex.quote(server['path'])} && exec $SHELL"
 
     cmd.append(server["host"])
     if remote_cmd:

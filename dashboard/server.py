@@ -16,24 +16,24 @@ from fastapi.templating import Jinja2Templates
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 from dashboard.session_manager import (
-    async_init_db, async_get_all_sessions,
+    async_init_db, async_get_all_sessions, async_get_session,
     async_check_stuck_sessions, async_clean_expired_sessions,
 )
 
 # WebSocket 连接管理
-ws_clients: list[WebSocket] = []
+ws_clients: set[WebSocket] = set()
 
 
 async def broadcast_ws(message: dict):
     """向所有 WebSocket 客户端广播消息"""
     dead = []
-    for ws in ws_clients:
+    for ws in list(ws_clients):
         try:
             await ws.send_json(message)
         except Exception:
             dead.append(ws)
     for ws in dead:
-        ws_clients.remove(ws)
+        ws_clients.discard(ws)
 
 
 async def send_toast_notification(project: str, task: str, status: str):
@@ -54,27 +54,33 @@ async def send_toast_notification(project: str, task: str, status: str):
 
 
 async def stuck_checker():
-    """定时检查卡死会话 + 自动清理过期会话"""
+    """定时检查卡死会话 + 自动清理过期会话 + SFTP 空闲连接回收"""
     while True:
         await asyncio.sleep(60)
+        # SFTP 空闲连接回收
+        try:
+            from modules.sftp_pool import cleanup_idle
+            await asyncio.to_thread(cleanup_idle)
+        except Exception:
+            pass
         try:
             stuck_ids = await async_check_stuck_sessions()
-            if stuck_ids:
-                sessions = await async_get_all_sessions()
-                await broadcast_ws({
-                    "type": "stuck_detected",
-                    "session_ids": stuck_ids,
-                    "sessions": sessions,
-                })
+            for sid in stuck_ids:
+                session = await async_get_session(sid)
+                if session:
+                    await broadcast_ws({
+                        "type": "session_updated",
+                        "session_id": sid,
+                        "session": session,
+                    })
         except Exception:
             pass
         # 自动清理过期会话
         try:
             from config import get_session_expire_days
-            cleaned = await async_clean_expired_sessions(get_session_expire_days())
+            cleaned, deleted_ids = await async_clean_expired_sessions(get_session_expire_days())
             if cleaned > 0:
-                sessions = await async_get_all_sessions()
-                await broadcast_ws({"type": "auto_cleaned", "count": cleaned, "sessions": sessions})
+                await broadcast_ws({"type": "sessions_deleted", "session_ids": deleted_ids})
         except Exception:
             pass
 
@@ -85,6 +91,11 @@ async def lifespan(app: FastAPI):
     task = asyncio.create_task(stuck_checker())
     yield
     task.cancel()
+    try:
+        from modules.sftp_pool import close_all
+        close_all()
+    except Exception:
+        pass
 
 
 app = FastAPI(title="Listary Tools", lifespan=lifespan)
@@ -116,7 +127,7 @@ async def panel_page(request: Request):
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    ws_clients.append(websocket)
+    ws_clients.add(websocket)
     try:
         # 发送当前状态
         sessions_data = await async_get_all_sessions()
@@ -124,10 +135,9 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        if websocket in ws_clients:
-            ws_clients.remove(websocket)
+        ws_clients.discard(websocket)
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("dashboard.server:app", host="0.0.0.0", port=9000, reload=True)
+    uvicorn.run("dashboard.server:app", host="127.0.0.1", port=9000, reload=True)

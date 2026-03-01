@@ -49,5 +49,14 @@ async def save_settings_api(req: dict):
     for k in ("port", "stuck_timeout", "session_expire_days", "windsurf_path", "lang"):
         if k in req:
             current[k] = req[k]
+    # 类型校验：数值字段必须为正整数
+    for k in ("port", "stuck_timeout", "session_expire_days"):
+        if k in current:
+            try:
+                current[k] = int(current[k])
+                if current[k] <= 0:
+                    return JSONResponse(status_code=400, content={"error": f"{k} 必须为正整数"})
+            except (ValueError, TypeError):
+                return JSONResponse(status_code=400, content={"error": f"{k} 必须为正整数"})
     save_settings(current)
     return {"ok": True}

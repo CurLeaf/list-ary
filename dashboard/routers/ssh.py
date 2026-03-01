@@ -2,14 +2,56 @@
 
 import asyncio
 import os
+import posixpath
+import shlex
+import subprocess
 import sys
+import tempfile
 
-from fastapi import APIRouter
+from fastapi import APIRouter, UploadFile, File, Form
 from fastapi.responses import JSONResponse
+
+# Windows 下隐藏 subprocess 控制台窗口
+_SUBPROCESS_FLAGS = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 from dashboard.models import ServerConfig
 
 router = APIRouter(tags=["ssh"])
+
+
+def _known_hosts_path() -> str:
+    """返回自定义 known_hosts 文件路径"""
+    from utils import get_data_dir
+    keys_dir = os.path.join(get_data_dir(), "ssh_keys")
+    os.makedirs(keys_dir, exist_ok=True)
+    return os.path.join(keys_dir, "known_hosts")
+
+
+def _build_ssh_cmd(server: dict) -> list[str]:
+    """构建 SSH 基础命令（复用于 ls / scp 等场景）"""
+    cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
+           "-o", "StrictHostKeyChecking=accept-new",
+           "-o", f"UserKnownHostsFile={_known_hosts_path()}"]
+    if server.get("port") and server["port"] != 22:
+        cmd += ["-p", str(server["port"])]
+    if server.get("key"):
+        key_val = server["key"]
+        if "PRIVATE KEY" not in key_val:
+            cmd += ["-i", os.path.expanduser(key_val)]
+    cmd.append(server["host"])
+    return cmd
+
+
+def _validate_subpath(subpath: str) -> str | None:
+    """校验并规范化子路径，返回 None 表示越界"""
+    if not subpath:
+        return ""
+    normalized = posixpath.normpath(subpath).strip("/")
+    if normalized == ".":
+        return ""
+    if ".." in normalized.split("/"):
+        return None
+    return normalized
 
 
 @router.get("/servers")
@@ -79,16 +121,18 @@ async def ping_servers():
 
 
 @router.post("/ssh-connect/{index}")
-async def ssh_connect(index: int):
-    """连接到 SSH 服务器"""
-    import subprocess, shutil
+async def ssh_connect(index: int, req: dict = None):
+    """连接到 SSH 服务器，支持 subpath 打开当前浏览的目录"""
+    import shutil
     from modules.ssh_manager import load_servers, save_servers, save_key_content_to_file
     servers = load_servers()
     if not (0 <= index < len(servers)):
         return JSONResponse(status_code=404, content={"error": "服务器不存在"})
     server = servers[index]
 
-    ssh_cmd = ["ssh", "-t"]
+    ssh_cmd = ["ssh", "-t",
+                "-o", "StrictHostKeyChecking=accept-new",
+                "-o", f"UserKnownHostsFile={_known_hosts_path()}"]
     if server.get("port") and server["port"] != 22:
         ssh_cmd += ["-p", str(server["port"])]
     if server.get("key"):
@@ -101,8 +145,16 @@ async def ssh_connect(index: int):
             key_path = os.path.expanduser(key_val)
         ssh_cmd += ["-i", key_path]
     ssh_cmd.append(server["host"])
-    if server.get("path"):
-        ssh_cmd.append(f"cd {server['path']} && exec $SHELL")
+
+    # 计算目标目录：root_path + subpath（沙箱校验）
+    root_path = server.get("path", "").strip().rstrip("/")
+    subpath = (req or {}).get("subpath", "") if req else ""
+    if root_path:
+        normalized = _validate_subpath(subpath)
+        if normalized is None:
+            return JSONResponse(status_code=403, content={"error": "路径越界"})
+        target = f"{root_path}/{normalized}" if normalized else root_path
+        ssh_cmd.append(f"cd {shlex.quote(target)} && exec $SHELL")
 
     wt = shutil.which("wt") or shutil.which("wt.exe")
     try:
@@ -118,7 +170,6 @@ async def ssh_connect(index: int):
 @router.post("/ssh-key/ensure")
 async def ensure_ssh_key(req: dict):
     """检查本地是否已有密钥对，没有则自动生成。返回私钥路径和公钥内容"""
-    import subprocess
     from utils import get_data_dir
     server_name = req.get("server_name", "default").strip() or "default"
     keys_dir = os.path.join(get_data_dir(), "ssh_keys")
@@ -140,7 +191,8 @@ async def ensure_ssh_key(req: dict):
         result = await asyncio.to_thread(
             subprocess.run,
             ["ssh-keygen", "-t", "ed25519", "-f", key_path, "-N", "", "-C", server_name],
-            capture_output=True, text=True, timeout=15
+            capture_output=True, text=True, timeout=15,
+            creationflags=_SUBPROCESS_FLAGS
         )
         if result.returncode != 0:
             return JSONResponse(status_code=500, content={"error": result.stderr.strip() or "生成密钥失败"})
@@ -156,7 +208,6 @@ async def ensure_ssh_key(req: dict):
 @router.post("/ssh-test")
 async def test_ssh_connection(req: dict):
     """测试 SSH 连接是否能通过密钥认证"""
-    import subprocess
     host = req.get("host", "").strip()
     port = req.get("port", 22)
     key_path = req.get("key", "").strip()
@@ -165,7 +216,8 @@ async def test_ssh_connection(req: dict):
 
     ssh_cmd = [
         "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
-        "-o", "StrictHostKeyChecking=no",
+        "-o", "StrictHostKeyChecking=accept-new",
+        "-o", f"UserKnownHostsFile={_known_hosts_path()}",
     ]
     if port and port != 22:
         ssh_cmd += ["-p", str(port)]
@@ -176,7 +228,8 @@ async def test_ssh_connection(req: dict):
     try:
         result = await asyncio.to_thread(
             subprocess.run, ssh_cmd,
-            capture_output=True, text=True, timeout=10
+            capture_output=True, text=True, timeout=10,
+            creationflags=_SUBPROCESS_FLAGS
         )
         if result.returncode == 0:
             return {"ok": True, "connected": True}
@@ -211,7 +264,11 @@ async def read_ssh_key(path: str = ""):
     """读取 SSH 密钥文件内容"""
     if not path:
         return JSONResponse(status_code=400, content={"error": "路径不能为空"})
-    expanded = os.path.expanduser(path)
+    expanded = os.path.realpath(os.path.expanduser(path))
+    from utils import get_data_dir
+    allowed_dir = os.path.realpath(os.path.join(get_data_dir(), "ssh_keys"))
+    if not expanded.startswith(allowed_dir + os.sep) and expanded != allowed_dir:
+        return JSONResponse(status_code=403, content={"error": "只允许读取 ssh_keys 目录下的文件"})
     if not os.path.isfile(expanded):
         return JSONResponse(status_code=404, content={"error": "文件不存在"})
     try:
@@ -223,34 +280,48 @@ async def read_ssh_key(path: str = ""):
 
 
 @router.get("/servers/{index}/files")
-async def list_remote_files(index: int):
-    """通过 SSH 列出远程服务器目录下的文件"""
-    import subprocess
+async def list_remote_files(index: int, subpath: str = ""):
+    """通过 SSH 列出远程服务器目录下的文件，支持 subpath 子目录浏览"""
     from modules.ssh_manager import load_servers
     servers = load_servers()
     if not (0 <= index < len(servers)):
         return JSONResponse(status_code=404, content={"error": "服务器不存在"})
     server = servers[index]
-    remote_path = server.get("path", "").strip()
-    if not remote_path:
-        return {"ok": True, "files": [], "path": ""}
+    root_path = server.get("path", "").strip().rstrip("/")
+    if not root_path:
+        return {"ok": True, "files": [], "path": "", "subpath": "", "root": "", "can_go_up": False}
 
-    # 构建 ssh 命令: ls -1pA (一行一个, 目录加/, 不显示 . ..)
-    ssh_cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=no"]
-    if server.get("port") and server["port"] != 22:
-        ssh_cmd += ["-p", str(server["port"])]
-    if server.get("key"):
-        key_val = server["key"]
-        if "PRIVATE KEY" not in key_val:
-            key_path = os.path.expanduser(key_val)
-            ssh_cmd += ["-i", key_path]
-    ssh_cmd.append(server["host"])
-    ssh_cmd.append(f"ls -1pA {remote_path}")
+    # 路径沙箱校验
+    normalized = _validate_subpath(subpath)
+    if normalized is None:
+        return JSONResponse(status_code=403, content={"error": "路径越界"})
+
+    target = f"{root_path}/{normalized}" if normalized else root_path
+
+    # 优先使用 paramiko SFTP（复用连接），失败则 fallback 到 subprocess
+    try:
+        from modules.sftp_pool import listdir as sftp_listdir
+        files = await asyncio.to_thread(sftp_listdir, server, target)
+        return {
+            "ok": True,
+            "files": files,
+            "path": target,
+            "subpath": normalized,
+            "root": root_path,
+            "can_go_up": bool(normalized),
+        }
+    except Exception:
+        pass
+
+    # Fallback: subprocess ssh ls
+    ssh_cmd = _build_ssh_cmd(server)
+    ssh_cmd.append(f"ls -1pA {shlex.quote(target)}")
 
     try:
         result = await asyncio.to_thread(
             subprocess.run, ssh_cmd,
-            capture_output=True, text=True, timeout=10
+            capture_output=True, text=True, timeout=10,
+            creationflags=_SUBPROCESS_FLAGS
         )
         if result.returncode != 0:
             return JSONResponse(status_code=500, content={"error": result.stderr.strip() or "SSH 连接失败"})
@@ -264,17 +335,81 @@ async def list_remote_files(index: int):
                 files.append({"name": line[:-1], "type": "dir"})
             else:
                 files.append({"name": line, "type": "file"})
-        return {"ok": True, "files": files, "path": remote_path}
+        return {
+            "ok": True,
+            "files": files,
+            "path": target,
+            "subpath": normalized,
+            "root": root_path,
+            "can_go_up": bool(normalized),
+        }
     except subprocess.TimeoutExpired:
         return JSONResponse(status_code=504, content={"error": "SSH 连接超时"})
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
+@router.post("/servers/{index}/upload")
+async def upload_file(index: int, file: UploadFile = File(...), subpath: str = Form("")):
+    """通过 SCP 上传本地文件到远程服务器目录"""
+    from modules.ssh_manager import load_servers
+    servers = load_servers()
+    if not (0 <= index < len(servers)):
+        return JSONResponse(status_code=404, content={"error": "服务器不存在"})
+    server = servers[index]
+    root_path = server.get("path", "").strip().rstrip("/")
+    if not root_path:
+        return JSONResponse(status_code=400, content={"error": "服务器未配置远程路径"})
+
+    # 路径沙箱校验
+    normalized = _validate_subpath(subpath)
+    if normalized is None:
+        return JSONResponse(status_code=403, content={"error": "路径越界"})
+
+    target_dir = f"{root_path}/{normalized}" if normalized else root_path
+
+    # 将上传文件写入临时文件
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f"_{file.filename}")
+    try:
+        content = await file.read()
+        tmp.write(content)
+        tmp.close()
+
+        # 构建 scp 命令
+        scp_cmd = ["scp",
+                   "-o", "StrictHostKeyChecking=accept-new",
+                   "-o", f"UserKnownHostsFile={_known_hosts_path()}"]
+        if server.get("port") and server["port"] != 22:
+            scp_cmd += ["-P", str(server["port"])]
+        if server.get("key"):
+            key_val = server["key"]
+            if "PRIVATE KEY" not in key_val:
+                scp_cmd += ["-i", os.path.expanduser(key_val)]
+        remote_dest = f"{server['host']}:{target_dir}/{file.filename}"
+        scp_cmd += [tmp.name, remote_dest]
+
+        result = await asyncio.to_thread(
+            subprocess.run, scp_cmd,
+            capture_output=True, text=True, timeout=120,
+            creationflags=_SUBPROCESS_FLAGS
+        )
+        if result.returncode != 0:
+            return JSONResponse(status_code=500, content={"error": result.stderr.strip() or "上传失败"})
+        return {"ok": True, "filename": file.filename, "path": f"{target_dir}/{file.filename}"}
+    except subprocess.TimeoutExpired:
+        return JSONResponse(status_code=504, content={"error": "上传超时"})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+
+
 @router.get("/ssh-key/open-dir")
 async def open_ssh_key_dir():
     """在文件资源管理器中打开 SSH 密钥所在目录"""
-    import subprocess
     from utils import get_data_dir
     keys_dir = os.path.join(get_data_dir(), "ssh_keys")
     os.makedirs(keys_dir, exist_ok=True)

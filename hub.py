@@ -55,12 +55,29 @@ def start_server(port: int):
         ctypes.windll.user32.MessageBoxW(0, f"服务启动失败:\n{e}", "Listary 错误", 0x10)
 
 
+_LOADING_HTML = """
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<style>
+  body{margin:0;background:#0c0c0c;display:flex;align-items:center;justify-content:center;height:100vh;font-family:monospace}
+  .c{text-align:center;color:#00ff9f}
+  .dot{display:inline-block;animation:blink 1.2s infinite}
+  .dot:nth-child(2){animation-delay:.2s}
+  .dot:nth-child(3){animation-delay:.4s}
+  @keyframes blink{0%,80%{opacity:0}40%{opacity:1}}
+</style></head>
+<body><div class="c"><div style="font-size:14px;margin-bottom:12px">Listary 工具集</div>
+<div style="font-size:11px;color:#555">加载中<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></div>
+</div></body></html>
+"""
+
+
 def launch_gui():
     """启动 pywebview 原生窗口"""
     global _actual_port
     from config import find_free_port, get_port, WINDOW_WIDTH, WINDOW_HEIGHT, SERVER_READY_TIMEOUT
-
     from utils import log
+    import webview
 
     # 检测可用端口
     try:
@@ -74,37 +91,37 @@ def launch_gui():
             0, f"端口 {get_port()}-{get_port()+5} 全部被占用，无法启动服务。", "Listary 错误", 0x10)
         return
 
-    # 启动后台服务
-    server_thread = threading.Thread(target=start_server, args=(_actual_port,), daemon=True)
-    server_thread.start()
-
-    # 等待服务就绪
-    import time
-    import urllib.request
-    url = f"http://127.0.0.1:{_actual_port}/panel"
-    max_attempts = int(SERVER_READY_TIMEOUT / 0.2)
-    server_ok = False
-    for _ in range(max_attempts):
-        try:
-            urllib.request.urlopen(url, timeout=1)
-            server_ok = True
-            break
-        except Exception:
-            time.sleep(0.2)
-    if not server_ok:
-        log.error(f"FastAPI 服务未就绪，{SERVER_READY_TIMEOUT}s 超时")
-        # 仍然打开窗口，日志里会有详细错误
-
-    # 启动 pywebview 原生窗口 + 系统托盘
-    import webview
-
+    # 立即创建窗口（显示加载页），不等待服务
     window = webview.create_window(
         "Listary 工具集",
-        url,
+        html=_LOADING_HTML,
         width=WINDOW_WIDTH,
         height=WINDOW_HEIGHT,
         min_size=(800, 500),
     )
+
+    def _wait_and_navigate(win):
+        """后台等待服务就绪，然后跳转到面板"""
+        import time
+        import urllib.request
+        url = f"http://127.0.0.1:{_actual_port}/panel"
+        max_attempts = int(SERVER_READY_TIMEOUT / 0.2)
+        for _ in range(max_attempts):
+            try:
+                urllib.request.urlopen(url, timeout=1)
+                win.load_url(url)
+                return
+            except Exception:
+                time.sleep(0.2)
+        log.error(f"FastAPI 服务未就绪，{SERVER_READY_TIMEOUT}s 超时")
+
+    # 启动后台服务
+    server_thread = threading.Thread(target=start_server, args=(_actual_port,), daemon=True)
+    server_thread.start()
+
+    def _on_webview_ready(win):
+        """webview 窗口就绪后开始等待服务"""
+        threading.Thread(target=_wait_and_navigate, args=(win,), daemon=True).start()
 
     def _start_tray(win):
         """系统托盘：关闭窗口时隐藏到托盘"""
@@ -127,8 +144,7 @@ def launch_gui():
                 win.show()
 
             def on_quit(icon, item):
-                icon.stop()
-                win.destroy()
+                sys.exit(0)
 
             icon = pystray.Icon(
                 "listary",
@@ -155,7 +171,8 @@ def launch_gui():
 
     tray_thread = threading.Thread(target=_start_tray, args=(window,), daemon=True)
     tray_thread.start()
-    webview.start()
+    webview.start(func=_on_webview_ready, args=[window])
+    sys.exit(0)
 
 
 # ─── CLI 命令模式（保留向后兼容） ───

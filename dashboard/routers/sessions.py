@@ -49,6 +49,7 @@ async def report(req: ReportRequest):
 @router.get("/poll/{session_id}", response_model=PollResponse)
 async def poll(session_id: str, timeout: int = 30):
     """长轮询等待用户回复"""
+    timeout = min(timeout, 60)
     # 先检查是否已有回复
     reply = await async_get_reply(session_id)
     if reply is not None:

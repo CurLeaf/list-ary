@@ -2,6 +2,7 @@
 SSH 服务器配置管理 — 增删改查
 """
 
+import copy
 import json
 import os
 import sys
@@ -33,14 +34,14 @@ _servers_cache: dict = {"data": None, "ts": 0.0, "ttl": 10.0}
 def load_servers() -> list[dict]:
     now = time.time()
     if _servers_cache["data"] is not None and now - _servers_cache["ts"] < _servers_cache["ttl"]:
-        return _servers_cache["data"]
+        return copy.deepcopy(_servers_cache["data"])
     path = _get_servers_read_path()
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
             result = json.load(f)
             _servers_cache["data"] = result
             _servers_cache["ts"] = now
-            return result
+            return copy.deepcopy(result)
     return []
 
 

@@ -8,12 +8,29 @@ import json
 from datetime import datetime, timezone, timedelta
 from functools import partial
 
+import atexit
+
 from utils import get_data_dir
 
 DB_PATH = os.path.join(get_data_dir(), "dashboard.db")
 STUCK_TIMEOUT_MINUTES = 5
 
 _local = threading.local()
+_all_conns: list[sqlite3.Connection] = []
+_all_conns_lock = threading.Lock()
+
+
+def _close_all_conns():
+    with _all_conns_lock:
+        for c in _all_conns:
+            try:
+                c.close()
+            except Exception:
+                pass
+        _all_conns.clear()
+
+
+atexit.register(_close_all_conns)
 
 
 def _ensure_data_dir():
@@ -25,6 +42,9 @@ def _get_conn() -> sqlite3.Connection:
     if not hasattr(_local, "conn") or _local.conn is None:
         _ensure_data_dir()
         _local.conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        _local.conn.execute("PRAGMA journal_mode=WAL")
+        with _all_conns_lock:
+            _all_conns.append(_local.conn)
     return _local.conn
 
 
@@ -32,6 +52,7 @@ def init_db():
     """初始化 SQLite 数据库"""
     _ensure_data_dir()
     conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS sessions (
             session_id TEXT PRIMARY KEY,
@@ -207,7 +228,8 @@ def clean_all_sessions() -> int:
     count = cursor.rowcount
     conn.execute("UPDATE task_counter SET count = 0 WHERE id = 1")
     conn.commit()
-    _reply_events.clear()
+    with _reply_events_lock:
+        _reply_events.clear()
     return count
 
 
@@ -262,34 +284,41 @@ def _row_to_dict(row) -> dict:
 
 # 长轮询用的事件管理
 _reply_events: dict[str, asyncio.Event] = {}
+_reply_events_lock = threading.Lock()
 
 
 def get_reply_event(session_id: str) -> asyncio.Event:
     """获取或创建长轮询用的 asyncio.Event"""
-    if session_id not in _reply_events:
-        _reply_events[session_id] = asyncio.Event()
-    return _reply_events[session_id]
+    with _reply_events_lock:
+        if session_id not in _reply_events:
+            _reply_events[session_id] = asyncio.Event()
+        return _reply_events[session_id]
 
 
 def notify_reply(session_id: str):
     """通知长轮询有新回复"""
-    if session_id in _reply_events:
-        _reply_events[session_id].set()
+    with _reply_events_lock:
+        ev = _reply_events.get(session_id)
+    if ev:
+        ev.set()
 
 
 def clear_reply_event(session_id: str):
     """清除事件状态"""
-    if session_id in _reply_events:
-        _reply_events[session_id].clear()
+    with _reply_events_lock:
+        ev = _reply_events.get(session_id)
+    if ev:
+        ev.clear()
 
 
 def remove_reply_event(session_id: str):
     """移除事件"""
-    _reply_events.pop(session_id, None)
+    with _reply_events_lock:
+        _reply_events.pop(session_id, None)
 
 
-def clean_expired_sessions(expire_days: int = 7) -> int:
-    """清理 N 天前的已完成/已取消会话，返回清理数量"""
+def clean_expired_sessions(expire_days: int = 7) -> tuple[int, list[str]]:
+    """清理 N 天前的已完成/已取消会话，返回 (count, expired_ids)"""
     conn = _get_conn()
     cutoff = (datetime.now(timezone.utc) - timedelta(days=expire_days)).isoformat()
     # 先查出要删的 session_id，以便清理 _reply_events
@@ -299,13 +328,14 @@ def clean_expired_sessions(expire_days: int = 7) -> int:
     )
     expired_ids = [row[0] for row in cursor.fetchall()]
     if not expired_ids:
-        return 0
+        return 0, []
     placeholders = ",".join("?" * len(expired_ids))
     conn.execute(f"DELETE FROM sessions WHERE session_id IN ({placeholders})", expired_ids)
     conn.commit()
-    for sid in expired_ids:
-        _reply_events.pop(sid, None)
-    return len(expired_ids)
+    with _reply_events_lock:
+        for sid in expired_ids:
+            _reply_events.pop(sid, None)
+    return len(expired_ids), expired_ids
 
 
 # ─── 异步包装层（避免阻塞 FastAPI 事件循环） ───
@@ -343,5 +373,5 @@ async def async_get_session_context(session_id: str) -> str:
 async def async_check_stuck_sessions() -> list[str]:
     return await asyncio.to_thread(check_stuck_sessions)
 
-async def async_clean_expired_sessions(expire_days: int = 7) -> int:
+async def async_clean_expired_sessions(expire_days: int = 7) -> tuple[int, list[str]]:
     return await asyncio.to_thread(clean_expired_sessions, expire_days)

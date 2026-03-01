@@ -358,31 +358,56 @@
                     <button class="btn-ghost text-[10px] opacity-0 group-hover:opacity-100"
                             x-show="s.path"
                             @click.stop="toggleFiles(i)"
-                            x-text="expandedServer === i ? t('ssh_hide_files') : t('ssh_show_files')"></button>
+                            x-text="fileBrowsers[i] ? t('ssh_hide_files') : t('ssh_show_files')"></button>
                     <span class="text-[10px] text-term-dim opacity-0 group-hover:opacity-100">-></span>
                   </div>
                 </div>
-                <!-- File listing -->
-                <div x-show="expandedServer === i" x-cloak class="ml-6 mt-1 mb-2 fade-in">
-                  <div x-show="remoteFilesLoading" class="card-static py-3 text-center">
+                <!-- File Browser -->
+                <div x-show="fileBrowsers[i]" x-cloak class="ml-6 mt-1 mb-2 fade-in">
+                  <div x-show="(fileBrowsers[i] || {}).loading" class="card-static py-3 text-center">
                     <span class="text-[10px] text-term-dim">[..] <span x-text="t('ssh_files_loading')"></span></span>
                   </div>
-                  <div x-show="remoteFilesError && !remoteFilesLoading" class="card-static py-3 text-center">
-                    <span class="text-[10px] text-term-red">[!!] <span x-text="remoteFilesError"></span></span>
+                  <div x-show="(fileBrowsers[i] || {}).error && !(fileBrowsers[i] || {}).loading" class="card-static py-3 text-center">
+                    <span class="text-[10px] text-term-red">[!!] <span x-text="(fileBrowsers[i] || {}).error"></span></span>
                   </div>
-                  <div x-show="!remoteFilesLoading && !remoteFilesError && remoteFiles.length > 0">
-                    <div class="text-[10px] text-term-dim mb-1.5 px-1" x-text="remoteFilesPath"></div>
-                    <div class="grid grid-cols-2 gap-0.5">
-                      <template x-for="f in remoteFiles" :key="f.name">
-                        <div class="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-term-card">
+                  <div x-show="!(fileBrowsers[i] || {}).loading && !(fileBrowsers[i] || {}).error">
+                    <!-- Toolbar: breadcrumb + back + upload -->
+                    <div class="flex items-center justify-between mb-1.5 px-1">
+                      <div class="flex items-center gap-0.5 text-[10px] text-term-dim min-w-0 flex-1 overflow-hidden">
+                        <span class="text-term-cyan cursor-pointer hover:underline shrink-0"
+                              @click="gotoBreadcrumb(i, 0)"
+                              x-text="((fileBrowsers[i] || {}).root || '').split('/').pop() || '/'"></span>
+                        <template x-for="(seg, idx) in ((fileBrowsers[i] || {}).breadcrumbs || [])" :key="idx">
+                          <span class="flex items-center gap-0.5 shrink-0">
+                            <span class="text-term-dim">/</span>
+                            <span class="text-term-cyan cursor-pointer hover:underline"
+                                  @click="gotoBreadcrumb(i, idx + 1)" x-text="seg"></span>
+                          </span>
+                        </template>
+                      </div>
+                      <div class="flex items-center gap-1 shrink-0 ml-2">
+                        <button class="btn-ghost text-[10px]"
+                                x-show="(fileBrowsers[i] || {}).canGoUp" @click="goUp(i)" x-text="'↑ ' + t('ssh_go_up')"></button>
+                        <button class="btn-ghost text-[10px]"
+                                @click="uploadFile(i)" :disabled="(fileBrowsers[i] || {}).uploading"
+                                x-text="(fileBrowsers[i] || {}).uploading ? t('ssh_uploading') : ('↑ ' + t('ssh_upload'))"></button>
+                      </div>
+                    </div>
+                    <!-- File grid -->
+                    <div class="grid grid-cols-2 gap-0.5" x-show="((fileBrowsers[i] || {}).files || []).length > 0">
+                      <template x-for="f in ((fileBrowsers[i] || {}).files || [])" :key="f.name">
+                        <div class="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-term-card"
+                             :class="f.type === 'dir' ? 'cursor-pointer' : ''"
+                             @click="f.type === 'dir' && enterDir(i, f)">
                           <i :data-lucide="fileIcon(f)" class="shrink-0" :style="'width:14px;height:14px;color:' + fileIconColor(f)"></i>
                           <span class="text-[11px] truncate" :class="f.type === 'dir' ? 'text-term-cyan' : 'text-term-text'" x-text="f.name"></span>
                         </div>
                       </template>
                     </div>
-                  </div>
-                  <div x-show="!remoteFilesLoading && !remoteFilesError && remoteFiles.length === 0" class="card-static py-3 text-center">
-                    <span class="text-[10px] text-term-dim">[--] <span x-text="t('ssh_files_empty')"></span></span>
+                    <!-- Empty -->
+                    <div x-show="((fileBrowsers[i] || {}).files || []).length === 0" class="card-static py-3 text-center">
+                      <span class="text-[10px] text-term-dim">[--] <span x-text="t('ssh_files_empty')"></span></span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -749,6 +774,8 @@ const _i18n = {
     kill_no_data:'暂无数据',
     ssh_title:'// SSH 连接', ssh_no_server:'暂无服务器', ssh_add_server:'添加服务器',
     ssh_show_files:'文件', ssh_hide_files:'收起', ssh_files_loading:'加载中...', ssh_files_empty:'目录为空',
+    ssh_go_up:'返回上级', ssh_upload:'上传', ssh_uploading:'上传中...',
+    ssh_upload_ok:'上传成功: {0}', ssh_upload_fail:'上传失败: {0}',
     sshcfg_title:'// SSH 配置', sshcfg_add:'+ 添加',
     sshcfg_no_config:'暂无服务器配置',
     sshcfg_edit_title:'// 编辑服务器', sshcfg_add_title:'// 添加服务器',
@@ -803,6 +830,8 @@ const _i18n = {
     kill_no_data:'No data',
     ssh_title:'// SSH Connect', ssh_no_server:'No servers', ssh_add_server:'ADD SERVER',
     ssh_show_files:'FILES', ssh_hide_files:'HIDE', ssh_files_loading:'Loading...', ssh_files_empty:'Directory empty',
+    ssh_go_up:'UP', ssh_upload:'UPLOAD', ssh_uploading:'UPLOADING...',
+    ssh_upload_ok:'Uploaded: {0}', ssh_upload_fail:'Upload failed: {0}',
     sshcfg_title:'// SSH Config', sshcfg_add:'+ ADD',
     sshcfg_no_config:'No server configuration',
     sshcfg_edit_title:'// EDIT SERVER', sshcfg_add_title:'// ADD SERVER',
@@ -854,7 +883,7 @@ function app() {
     killPort: '', killing: false, killResult: null,
     listeningPorts: [], portsTotal: 0, loadingPorts: false, portSearch: '',
     servers: [], serverStatus: {},
-    expandedServer: null, remoteFiles: [], remoteFilesPath: '', remoteFilesLoading: false, remoteFilesError: '',
+    fileBrowsers: {},  // per-server state: { [index]: { files, path, loading, error, subpath, root, canGoUp, uploading, breadcrumbs } }
     showServerForm: false, editingServer: {}, editingIdx: -1, showKeyModal: false, sshKeyInput: '', sshKeyPath: '',
     generatedPubKey: '', generatingKey: false, keyIsNew: false,
     sshTesting: false, sshTestResult: null, sshTestError: '',
@@ -953,7 +982,9 @@ function app() {
       } catch (e) { /* ignore */ }
     },
     async sshConnect(i) {
-      try { const r = await this.api('POST', `/api/ssh-connect/${i}`); this.toast(this.t('toast_connected', r.server)); }
+      const fb = this.fileBrowsers[i];
+      const body = (fb && fb.subpath) ? { subpath: fb.subpath } : {};
+      try { const r = await this.api('POST', `/api/ssh-connect/${i}`, body); this.toast(this.t('toast_connected', r.server)); }
       catch (e) { this.toast(e.message, 'error'); }
     },
     async openKeyModal() {
@@ -1030,18 +1061,84 @@ function app() {
       try { const r = await this.api('DELETE', `/api/servers/${i}`); this.servers = r.servers; this.toast(this.t('toast_deleted', r.removed)); }
       catch (e) { this.toast(e.message, 'error'); }
     },
+    _initBrowser(i) {
+      return { files: [], path: '', loading: false, error: '', subpath: '', root: '', canGoUp: false, uploading: false, breadcrumbs: [] };
+    },
     async toggleFiles(i) {
-      if (this.expandedServer === i) { this.expandedServer = null; return; }
-      this.expandedServer = i;
-      this.remoteFiles = []; this.remoteFilesPath = ''; this.remoteFilesError = '';
-      this.remoteFilesLoading = true;
+      if (this.fileBrowsers[i]) {
+        const copy = { ...this.fileBrowsers }; delete copy[i]; this.fileBrowsers = copy;
+        return;
+      }
+      this.fileBrowsers = { ...this.fileBrowsers, [i]: this._initBrowser(i) };
+      await this.loadRemoteFiles(i, '');
+    },
+    async loadRemoteFiles(serverIdx, subpath) {
+      const fb = this.fileBrowsers[serverIdx] || this._initBrowser(serverIdx);
+      fb.files = []; fb.error = ''; fb.loading = true;
+      this.fileBrowsers = { ...this.fileBrowsers, [serverIdx]: { ...fb } };
       try {
-        const r = await this.api('GET', `/api/servers/${i}/files`);
-        this.remoteFiles = r.files || [];
-        this.remoteFilesPath = r.path || '';
-      } catch (e) { this.remoteFilesError = e.message; }
-      this.remoteFilesLoading = false;
+        const params = subpath ? `?subpath=${encodeURIComponent(subpath)}` : '';
+        const r = await this.api('GET', `/api/servers/${serverIdx}/files${params}`);
+        fb.files = r.files || [];
+        fb.path = r.path || '';
+        fb.subpath = r.subpath || '';
+        fb.root = r.root || '';
+        fb.canGoUp = r.can_go_up || false;
+        fb.breadcrumbs = fb.subpath ? fb.subpath.split('/') : [];
+      } catch (e) { fb.error = e.message; }
+      fb.loading = false;
+      this.fileBrowsers = { ...this.fileBrowsers, [serverIdx]: { ...fb } };
       this.$nextTick(() => window._refreshIcons && window._refreshIcons());
+    },
+    async enterDir(serverIdx, f) {
+      if (f.type !== 'dir') return;
+      const fb = this.fileBrowsers[serverIdx];
+      if (!fb) return;
+      const newSub = fb.subpath ? `${fb.subpath}/${f.name}` : f.name;
+      await this.loadRemoteFiles(serverIdx, newSub);
+    },
+    async goUp(serverIdx) {
+      const fb = this.fileBrowsers[serverIdx];
+      if (!fb || !fb.canGoUp) return;
+      const parts = fb.subpath.split('/');
+      parts.pop();
+      await this.loadRemoteFiles(serverIdx, parts.join('/'));
+    },
+    async gotoBreadcrumb(serverIdx, depth) {
+      const fb = this.fileBrowsers[serverIdx];
+      if (!fb) return;
+      const parts = fb.breadcrumbs.slice(0, depth);
+      await this.loadRemoteFiles(serverIdx, parts.join('/'));
+    },
+    async uploadFile(serverIdx) {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.multiple = true;
+      input.onchange = async () => {
+        const fb = this.fileBrowsers[serverIdx];
+        if (!fb) return;
+        fb.uploading = true;
+        this.fileBrowsers = { ...this.fileBrowsers, [serverIdx]: { ...fb } };
+        for (const f of input.files) {
+          const fd = new FormData();
+          fd.append('file', f);
+          fd.append('subpath', fb.subpath);
+          try {
+            const res = await fetch(`/api/servers/${serverIdx}/upload`, {
+              method: 'POST', body: fd,
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error);
+            this.toast(this.t('ssh_upload_ok', f.name), 'success');
+          } catch (e) {
+            this.toast(this.t('ssh_upload_fail', e.message), 'error');
+          }
+        }
+        fb.uploading = false;
+        this.fileBrowsers = { ...this.fileBrowsers, [serverIdx]: { ...fb } };
+        await this.loadRemoteFiles(serverIdx, fb.subpath);
+      };
+      input.click();
     },
     fileIcon(f) {
       if (f.type === 'dir') return 'folder';
@@ -1158,6 +1255,9 @@ function app() {
           this.toast(this.t('toast_session_updated', d.session_id.slice(0, 8) + '...'), 'info');
         } else if (d.type === 'session_deleted') {
           this.sessions = this.sessions.filter(s => s.session_id !== d.session_id);
+        } else if (d.type === 'sessions_deleted' && d.session_ids) {
+          const delSet = new Set(d.session_ids);
+          this.sessions = this.sessions.filter(s => !delSet.has(s.session_id));
         } else if (d.type === 'all_cleaned') {
           this.sessions = [];
         } else if (d.sessions) {
