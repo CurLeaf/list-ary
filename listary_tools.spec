@@ -21,7 +21,6 @@ a = Analysis(
     binaries=[],
     datas=rich_datas + [
         # 看板 HTML 模板
-        (os.path.join('dashboard', 'templates', 'index.html'), os.path.join('dashboard', 'templates')),
         (os.path.join('dashboard', 'templates', 'panel.html'), os.path.join('dashboard', 'templates')),
         # 上报脚本模板（用于注入到项目）
         (os.path.join('report', 'report.py'), 'report'),
@@ -58,6 +57,12 @@ a = Analysis(
         'dashboard.server',
         'dashboard.models',
         'dashboard.session_manager',
+        'dashboard.routers',
+        'dashboard.routers.ports',
+        'dashboard.routers.ssh',
+        'dashboard.routers.windsurf',
+        'dashboard.routers.sessions',
+        'dashboard.routers.settings',
         'modules',
         'modules.kill_port',
         'modules.ssh_connect',
@@ -73,6 +78,8 @@ a = Analysis(
         'bottle',
         'clr_loader',
         'pythonnet',
+        'tkinter',
+        'tkinter.filedialog',
     ],
     hookspath=[],
     hooksconfig={},

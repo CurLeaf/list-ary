@@ -6,6 +6,7 @@ Listary 工具集 — 全局配置
 import json
 import os
 import socket
+import time
 
 from utils import get_data_dir
 
@@ -24,12 +25,22 @@ def _settings_path() -> str:
     return os.path.join(get_data_dir(), "settings.json")
 
 
+# ─── 设置缓存（10秒 TTL） ───
+_settings_cache: dict = {"data": None, "ts": 0.0, "ttl": 10.0}
+
+
 def load_settings() -> dict:
+    now = time.time()
+    if _settings_cache["data"] is not None and now - _settings_cache["ts"] < _settings_cache["ttl"]:
+        return _settings_cache["data"]
     p = _settings_path()
     if os.path.exists(p):
         try:
             with open(p, "r", encoding="utf-8") as f:
-                return json.load(f)
+                result = json.load(f)
+                _settings_cache["data"] = result
+                _settings_cache["ts"] = now
+                return result
         except (json.JSONDecodeError, OSError):
             pass
     return {}
@@ -40,6 +51,9 @@ def save_settings(settings: dict):
     os.makedirs(os.path.dirname(p), exist_ok=True)
     with open(p, "w", encoding="utf-8") as f:
         json.dump(settings, f, ensure_ascii=False, indent=2)
+    # 写入时更新缓存
+    _settings_cache["data"] = settings
+    _settings_cache["ts"] = time.time()
 
 
 def get_port() -> int:

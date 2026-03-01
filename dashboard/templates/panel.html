@@ -126,6 +126,11 @@
     .input-field::placeholder { color: #444; }
     .input-field:focus { border-color: #00ff9f; }
 
+    /* Hide number input spinners */
+    input[type="number"]::-webkit-outer-spin-button,
+    input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; appearance: none; margin: 0; }
+    input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+
     /* ── Nav ── */
     .nav-item {
       display: flex; align-items: center; gap: 10px;
@@ -337,18 +342,49 @@
           </template>
           <div class="space-y-1.5">
             <template x-for="(s, i) in servers" :key="i">
-              <div class="card flex items-center justify-between cursor-pointer group" @click="sshConnect(i)">
-                <div class="flex items-center gap-3 flex-1 min-w-0">
-                  <span class="text-xs" :class="serverStatus[i] === true ? 'text-term-green' : serverStatus[i] === false ? 'text-term-red' : 'text-term-dim'"
-                        x-text="serverStatus[i] === true ? '[ON]' : serverStatus[i] === false ? '[--]' : '[..]'"></span>
-                  <div class="min-w-0">
-                    <span class="text-xs text-term-text group-hover:text-term-green transition" x-text="s.name"></span>
-                    <span class="text-[10px] text-term-dim ml-2">
-                      <span x-text="s.host"></span><span x-show="s.port && s.port !== 22" x-text="':' + s.port"></span>
-                    </span>
+              <div>
+                <div class="card flex items-center justify-between cursor-pointer group" @click="sshConnect(i)">
+                  <div class="flex items-center gap-3 flex-1 min-w-0">
+                    <span class="text-xs" :class="serverStatus[i] === true ? 'text-term-green' : serverStatus[i] === false ? 'text-term-red' : 'text-term-dim'"
+                          x-text="serverStatus[i] === true ? '[ON]' : serverStatus[i] === false ? '[--]' : '[..]'"></span>
+                    <div class="min-w-0">
+                      <span class="text-xs text-term-text group-hover:text-term-green transition" x-text="s.name"></span>
+                      <span class="text-[10px] text-term-dim ml-2">
+                        <span x-text="s.host"></span><span x-show="s.port && s.port !== 22" x-text="':' + s.port"></span>
+                      </span>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <button class="btn-ghost text-[10px] opacity-0 group-hover:opacity-100"
+                            x-show="s.path"
+                            @click.stop="toggleFiles(i)"
+                            x-text="expandedServer === i ? t('ssh_hide_files') : t('ssh_show_files')"></button>
+                    <span class="text-[10px] text-term-dim opacity-0 group-hover:opacity-100">-></span>
                   </div>
                 </div>
-                <span class="text-[10px] text-term-dim opacity-0 group-hover:opacity-100">-></span>
+                <!-- File listing -->
+                <div x-show="expandedServer === i" x-cloak class="ml-6 mt-1 mb-2 fade-in">
+                  <div x-show="remoteFilesLoading" class="card-static py-3 text-center">
+                    <span class="text-[10px] text-term-dim">[..] <span x-text="t('ssh_files_loading')"></span></span>
+                  </div>
+                  <div x-show="remoteFilesError && !remoteFilesLoading" class="card-static py-3 text-center">
+                    <span class="text-[10px] text-term-red">[!!] <span x-text="remoteFilesError"></span></span>
+                  </div>
+                  <div x-show="!remoteFilesLoading && !remoteFilesError && remoteFiles.length > 0">
+                    <div class="text-[10px] text-term-dim mb-1.5 px-1" x-text="remoteFilesPath"></div>
+                    <div class="grid grid-cols-2 gap-0.5">
+                      <template x-for="f in remoteFiles" :key="f.name">
+                        <div class="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-term-card">
+                          <i :data-lucide="fileIcon(f)" class="shrink-0" :style="'width:14px;height:14px;color:' + fileIconColor(f)"></i>
+                          <span class="text-[11px] truncate" :class="f.type === 'dir' ? 'text-term-cyan' : 'text-term-text'" x-text="f.name"></span>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                  <div x-show="!remoteFilesLoading && !remoteFilesError && remoteFiles.length === 0" class="card-static py-3 text-center">
+                    <span class="text-[10px] text-term-dim">[--] <span x-text="t('ssh_files_empty')"></span></span>
+                  </div>
+                </div>
               </div>
             </template>
           </div>
@@ -389,8 +425,7 @@
           </template>
 
           <!-- Modal: Server form -->
-          <div x-show="showServerForm" class="fixed inset-0 modal-backdrop flex items-center justify-center z-40"
-               @click.self="showServerForm = false">
+          <div x-show="showServerForm" class="fixed inset-0 modal-backdrop flex items-center justify-center z-40">
             <div class="modal-panel p-5 w-full max-w-md fade-in">
               <h3 class="text-xs font-bold text-term-green mb-4" x-text="editingIdx >= 0 ? t('sshcfg_edit_title') : t('sshcfg_add_title')"></h3>
               <div class="space-y-3">
@@ -409,7 +444,9 @@
                   </div>
                   <div>
                     <label class="text-[10px] text-term-dim mb-1 block uppercase" x-text="t('label_ssh_key')"></label>
-                    <input class="input-field" placeholder="~/.ssh/id_rsa" x-model="editingServer.key">
+                    <button class="input-field w-full text-left truncate cursor-pointer" @click="openKeyModal()"
+                            :class="editingServer.key ? 'text-term-text' : 'text-[#444]'"
+                            x-text="editingServer.key ? editingServer.key : t('label_ssh_key_ph')"></button>
                   </div>
                 </div>
                 <div>
@@ -420,6 +457,58 @@
               <div class="flex justify-end gap-2 mt-5">
                 <button class="btn-ghost" @click="showServerForm = false" x-text="t('btn_cancel')"></button>
                 <button class="btn-primary" @click="saveServer()" :disabled="!editingServer.host" x-text="t('btn_save')"></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Modal: SSH Key -->
+          <div x-show="showKeyModal" class="fixed inset-0 modal-backdrop flex items-center justify-center z-50">
+            <div class="modal-panel p-5 w-full max-w-md fade-in">
+              <h3 class="text-xs font-bold text-term-green mb-3" x-text="t('label_ssh_key_title')"></h3>
+              <!-- Loading state -->
+              <div x-show="generatingKey" class="py-6 text-center">
+                <span class="text-[10px] text-term-dim">[..] <span x-text="t('keygen_checking')"></span></span>
+              </div>
+              <!-- Key ready state -->
+              <div x-show="!generatingKey">
+                <!-- Private key path -->
+                <div x-show="sshKeyPath" class="flex items-center gap-2 mb-3">
+                  <i data-lucide="key-round" style="width:14px;height:14px;color:#00ff9f;"></i>
+                  <span class="text-[10px] text-term-cyan truncate flex-1" x-text="sshKeyPath"></span>
+                  <span class="text-[10px]" :class="keyIsNew ? 'text-term-amber' : 'text-term-green'"
+                        x-text="keyIsNew ? '[NEW]' : '[OK]'"></span>
+                </div>
+                <!-- Public key -->
+                <div x-show="generatedPubKey" class="mb-3">
+                  <label class="text-[10px] text-term-green mb-1 block uppercase" x-text="t('keygen_pubkey_label')"></label>
+                  <div class="relative">
+                    <textarea class="input-field text-[10px] text-term-amber" rows="3" readonly x-model="generatedPubKey"></textarea>
+                    <button class="absolute top-1 right-1 btn-ghost text-[10px] px-1.5 py-0.5" @click="copyPubKey()">
+                      <i data-lucide="copy" style="width:10px;height:10px;"></i>
+                    </button>
+                  </div>
+                  <p class="text-[10px] text-term-dim mt-1" x-text="t('keygen_pubkey_hint')"></p>
+                </div>
+                <!-- Test connection result -->
+                <div x-show="sshTestResult !== null" class="mt-2 mb-3 text-[10px] fade-in">
+                  <span x-show="sshTestResult === true" class="text-term-green">[OK] <span x-text="t('ssh_test_ok')"></span></span>
+                  <span x-show="sshTestResult === false" class="text-term-red">[!!] <span x-text="sshTestError || t('ssh_test_fail')"></span></span>
+                </div>
+              </div>
+              <!-- Actions -->
+              <div x-show="!generatingKey" class="flex items-center justify-between mt-3">
+                <div class="flex gap-2">
+                  <button class="btn-ghost text-[10px] flex items-center gap-1" @click="openKeyDir()">
+                    <i data-lucide="folder-open" style="width:12px;height:12px;"></i> <span x-text="t('btn_open_key_dir')"></span>
+                  </button>
+                </div>
+                <div class="flex gap-2">
+                  <button class="btn-ghost text-[10px] flex items-center gap-1" @click="testSshConnection()" :disabled="sshTesting">
+                    <i data-lucide="plug" style="width:12px;height:12px;"></i>
+                    <span x-text="sshTesting ? t('ssh_test_testing') : t('ssh_test_btn')"></span>
+                  </button>
+                  <button class="btn-primary" @click="showKeyModal = false" x-text="t('btn_confirm')"></button>
+                </div>
               </div>
             </div>
           </div>
@@ -458,15 +547,18 @@
           </template>
 
           <!-- Modal: Setup project -->
-          <div x-show="showSetupForm" class="fixed inset-0 modal-backdrop flex items-center justify-center z-40"
-               @click.self="showSetupForm = false">
+          <div x-show="showSetupForm" class="fixed inset-0 modal-backdrop flex items-center justify-center z-40">
             <div class="modal-panel p-5 w-full max-w-md fade-in">
               <h3 class="text-xs font-bold text-term-green mb-4" x-text="editingProjectIdx >= 0 ? t('ws_edit_title') : t('ws_setup_title')"></h3>
               <div class="space-y-3">
                 <div>
                   <label class="text-[10px] text-term-dim mb-1 block uppercase"><span x-text="t('label_path')"></span> <span class="text-term-red">*</span></label>
-                  <input class="input-field" placeholder="D:\projects\my-app" x-model="setupForm.path"
-                         :disabled="editingProjectIdx >= 0">
+                  <div class="flex gap-2">
+                    <input class="input-field flex-1" :placeholder="t('ws_path_ph')" x-model="setupForm.path"
+                           :disabled="editingProjectIdx >= 0" readonly>
+                    <button class="btn-ghost whitespace-nowrap" @click="browseFolder()" :disabled="editingProjectIdx >= 0 || browsing"
+                            x-text="browsing ? '...' : t('btn_browse')"></button>
+                  </div>
                 </div>
                 <div>
                   <label class="text-[10px] text-term-dim mb-1 block uppercase" x-text="t('label_name')"></label>
@@ -625,6 +717,23 @@ document.addEventListener('DOMContentLoaded', () => { lucide.createIcons(); });
 document.addEventListener('alpine:initialized', () => {
   setTimeout(() => lucide.createIcons(), 50);
 });
+// MutationObserver: 自动检测新增 icon 元素并渲染，替代手动 createIcons 调用
+(function() {
+  let _iconTimer = null;
+  const _refreshIcons = () => {
+    clearTimeout(_iconTimer);
+    _iconTimer = setTimeout(() => lucide.createIcons(), 30);
+  };
+  const observer = new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      if (m.addedNodes.length) { _refreshIcons(); return; }
+    }
+  });
+  document.addEventListener('DOMContentLoaded', () => {
+    observer.observe(document.body, { childList: true, subtree: true });
+  });
+  window._refreshIcons = _refreshIcons;
+})();
 
 const _i18n = {
   zh: {
@@ -639,16 +748,27 @@ const _i18n = {
     kill_loading:'加载中', kill_refresh:'刷新',
     kill_no_data:'暂无数据',
     ssh_title:'// SSH 连接', ssh_no_server:'暂无服务器', ssh_add_server:'添加服务器',
+    ssh_show_files:'文件', ssh_hide_files:'收起', ssh_files_loading:'加载中...', ssh_files_empty:'目录为空',
     sshcfg_title:'// SSH 配置', sshcfg_add:'+ 添加',
     sshcfg_no_config:'暂无服务器配置',
     sshcfg_edit_title:'// 编辑服务器', sshcfg_add_title:'// 添加服务器',
     label_name:'名称', label_host:'主机', label_port:'端口',
-    label_ssh_key:'SSH 密钥', label_remote_path:'远程路径',
+    label_ssh_key:'SSH 密钥', label_ssh_key_title:'// 输入 SSH 密钥', label_ssh_key_ph:'输入密钥路径（如 ~/.ssh/id_rsa）\n或直接粘贴密钥内容（-----BEGIN OPENSSH PRIVATE KEY-----...）',
+    btn_open_key_dir:'打开密钥目录', btn_confirm:'确定',
+    keygen_checking:'检查密钥中...',
+    keygen_pubkey_label:'公钥（已复制到剪贴板）',
+    keygen_pubkey_hint:'将公钥粘贴到远程服务器的 ~/.ssh/authorized_keys 文件中',
+    toast_key_generated:'密钥对已生成，公钥已复制', toast_pubkey_copied:'公钥已复制',
+    ssh_test_btn:'测试连接', ssh_test_testing:'测试中...',
+    ssh_test_ok:'连接成功', ssh_test_fail:'连接失败', ssh_test_no_host:'请先填写主机地址',
+    label_remote_path:'远程路径',
     btn_cancel:'取消', btn_save:'保存', btn_edit:'编辑', btn_del:'删除', btn_reinject:'重注入',
     ws_title:'// Windsurf', ws_setup:'+ 配置',
     ws_no_project:'暂无项目',
     ws_edit_title:'// 编辑项目', ws_setup_title:'// 配置项目',
     ws_inject_desc:'自动注入 .windsurf/workflows/ 规则和上报脚本',
+    ws_path_ph:'点击浏览选择项目文件夹',
+    btn_browse:'浏览...',
     label_path:'路径', btn_open:'打开', btn_setup:'配置', btn_working:'处理中...',
     dash_title:'// 看板', dash_no_session:'暂无活跃会话',
     btn_fix:'修复', btn_cpy:'复制', btn_send:'发送', dash_reply_ph:'输入回复...',
@@ -658,7 +778,7 @@ const _i18n = {
     cfg_stuck:'卡住超时 (分钟)', cfg_expire:'会话过期 (天)',
     cfg_ws_path:'Windsurf 路径', cfg_lang:'语言', cfg_lang_desc:'界面显示语言',
     toast_killed:'终止 {0} 个进程', toast_no_listen:'端口 {0} 无监听',
-    toast_connected:'已连接: {0}', toast_server_updated:'服务器已更新',
+    toast_connected:'已连接: {0}', toast_key_saved:'密钥已保存为文件', toast_server_updated:'服务器已更新',
     toast_server_added:'服务器已添加', toast_deleted:'已删除: {0}',
     toast_project_updated:'项目已更新: {0}', toast_project_configured:'项目已配置: {0}',
     toast_opened:'已打开: {0}', toast_removed:'已移除: {0}',
@@ -682,16 +802,27 @@ const _i18n = {
     kill_loading:'LOADING', kill_refresh:'REFRESH',
     kill_no_data:'No data',
     ssh_title:'// SSH Connect', ssh_no_server:'No servers', ssh_add_server:'ADD SERVER',
+    ssh_show_files:'FILES', ssh_hide_files:'HIDE', ssh_files_loading:'Loading...', ssh_files_empty:'Directory empty',
     sshcfg_title:'// SSH Config', sshcfg_add:'+ ADD',
     sshcfg_no_config:'No server configuration',
     sshcfg_edit_title:'// EDIT SERVER', sshcfg_add_title:'// ADD SERVER',
     label_name:'Name', label_host:'Host', label_port:'Port',
-    label_ssh_key:'SSH Key', label_remote_path:'Remote Path',
+    label_ssh_key:'SSH Key', label_ssh_key_title:'// SSH KEY INPUT', label_ssh_key_ph:'Enter key path (e.g. ~/.ssh/id_rsa)\nor paste key content (-----BEGIN OPENSSH PRIVATE KEY-----...)',
+    btn_open_key_dir:'OPEN KEY DIR', btn_confirm:'OK',
+    keygen_checking:'Checking key...',
+    keygen_pubkey_label:'Public Key (copied to clipboard)',
+    keygen_pubkey_hint:'Paste the public key into the remote server\'s ~/.ssh/authorized_keys file',
+    toast_key_generated:'Key pair generated, public key copied', toast_pubkey_copied:'Public key copied',
+    ssh_test_btn:'TEST', ssh_test_testing:'TESTING...',
+    ssh_test_ok:'Connection successful', ssh_test_fail:'Connection failed', ssh_test_no_host:'Please enter host first',
+    label_remote_path:'Remote Path',
     btn_cancel:'CANCEL', btn_save:'SAVE', btn_edit:'EDIT', btn_del:'DEL', btn_reinject:'REINJECT',
     ws_title:'// Windsurf', ws_setup:'+ SETUP',
     ws_no_project:'No projects',
     ws_edit_title:'// EDIT PROJECT', ws_setup_title:'// SETUP PROJECT',
     ws_inject_desc:'Auto-inject .windsurf/workflows/ rules and report script',
+    ws_path_ph:'Click browse to select project folder',
+    btn_browse:'BROWSE',
     label_path:'Path', btn_open:'OPEN', btn_setup:'SETUP', btn_working:'WORKING...',
     dash_title:'// Dashboard', dash_no_session:'No active sessions',
     btn_fix:'FIX', btn_cpy:'CPY', btn_send:'SEND', dash_reply_ph:'reply...',
@@ -701,7 +832,7 @@ const _i18n = {
     cfg_stuck:'Stuck Timeout (min)', cfg_expire:'Session Expire (days)',
     cfg_ws_path:'Windsurf Path', cfg_lang:'Language', cfg_lang_desc:'Interface display language',
     toast_killed:'Terminated {0} process(es)', toast_no_listen:'Port {0} not listening',
-    toast_connected:'Connected: {0}', toast_server_updated:'Server updated',
+    toast_connected:'Connected: {0}', toast_key_saved:'Key saved as file', toast_server_updated:'Server updated',
     toast_server_added:'Server added', toast_deleted:'Deleted: {0}',
     toast_project_updated:'Project updated: {0}', toast_project_configured:'Project configured: {0}',
     toast_opened:'Opened: {0}', toast_removed:'Removed: {0}',
@@ -723,8 +854,11 @@ function app() {
     killPort: '', killing: false, killResult: null,
     listeningPorts: [], portsTotal: 0, loadingPorts: false, portSearch: '',
     servers: [], serverStatus: {},
-    showServerForm: false, editingServer: {}, editingIdx: -1,
-    projects: [], showSetupForm: false, settingUp: false,
+    expandedServer: null, remoteFiles: [], remoteFilesPath: '', remoteFilesLoading: false, remoteFilesError: '',
+    showServerForm: false, editingServer: {}, editingIdx: -1, showKeyModal: false, sshKeyInput: '', sshKeyPath: '',
+    generatedPubKey: '', generatingKey: false, keyIsNew: false,
+    sshTesting: false, sshTestResult: null, sshTestError: '',
+    projects: [], showSetupForm: false, settingUp: false, browsing: false,
     setupForm: { path: '', name: '' }, editingProjectIdx: -1,
     sessions: [], replyTexts: {}, ws: null,
     sessionFilter: 'all',
@@ -771,7 +905,6 @@ function app() {
     switchTab(t) {
       this.tab = t;
       if (t === 'kill') this.loadListeningPorts();
-      this.$nextTick(() => lucide.createIcons());
     },
 
     toast(msg, type = 'success') {
@@ -795,7 +928,6 @@ function app() {
         this.portsTotal = r.total;
       } catch (e) { /* ignore */ }
       this.loadingPorts = false;
-      this.$nextTick(() => lucide.createIcons());
     },
 
     async doKill() {
@@ -807,12 +939,10 @@ function app() {
           this.killResult.count > 0 ? 'success' : 'info');
       } catch (e) { this.toast(e.message, 'error'); }
       this.killing = false;
-      this.$nextTick(() => lucide.createIcons());
     },
 
     async loadServers() {
       try { this.servers = await this.api('GET', '/api/servers'); } catch (e) { this.toast(e.message, 'error'); }
-      this.$nextTick(() => lucide.createIcons());
       this.pingServers();
     },
     async pingServers() {
@@ -824,6 +954,62 @@ function app() {
     },
     async sshConnect(i) {
       try { const r = await this.api('POST', `/api/ssh-connect/${i}`); this.toast(this.t('toast_connected', r.server)); }
+      catch (e) { this.toast(e.message, 'error'); }
+    },
+    async openKeyModal() {
+      this.sshKeyPath = '';
+      this.sshKeyInput = '';
+      this.generatedPubKey = '';
+      this.keyIsNew = false;
+      this.sshTestResult = null;
+      this.sshTestError = '';
+      this.showKeyModal = true;
+      this.generatingKey = true;
+      try {
+        const r = await this.api('POST', '/api/ssh-key/ensure', {
+          server_name: this.editingServer.name || 'default'
+        });
+        this.editingServer.key = r.path;
+        this.sshKeyPath = r.path;
+        this.generatedPubKey = r.public_key;
+        this.keyIsNew = r.generated;
+        // 自动复制公钥到剪贴板
+        try { await navigator.clipboard.writeText(r.public_key); } catch (e) {}
+        this.toast(r.generated ? this.t('toast_key_generated') : this.t('toast_pubkey_copied'), 'success');
+      } catch (e) { this.toast(e.message, 'error'); }
+      this.generatingKey = false;
+      this.$nextTick(() => window._refreshIcons && window._refreshIcons());
+    },
+    async copyPubKey() {
+      try {
+        await navigator.clipboard.writeText(this.generatedPubKey);
+        this.toast(this.t('toast_pubkey_copied'), 'success');
+      } catch (e) { this.toast(e.message, 'error'); }
+    },
+    async testSshConnection() {
+      if (!this.editingServer.host) {
+        this.toast(this.t('ssh_test_no_host'), 'error');
+        return;
+      }
+      this.sshTesting = true;
+      this.sshTestResult = null;
+      this.sshTestError = '';
+      try {
+        const r = await this.api('POST', '/api/ssh-test', {
+          host: this.editingServer.host,
+          port: this.editingServer.port || 22,
+          key: this.sshKeyPath,
+        });
+        this.sshTestResult = r.connected;
+        this.sshTestError = r.error || '';
+      } catch (e) {
+        this.sshTestResult = false;
+        this.sshTestError = e.message;
+      }
+      this.sshTesting = false;
+    },
+    async openKeyDir() {
+      try { await this.api('GET', '/api/ssh-key/open-dir'); }
       catch (e) { this.toast(e.message, 'error'); }
     },
     editServer(i) {
@@ -838,18 +1024,66 @@ function app() {
         else { r = await this.api('POST', '/api/servers', this.editingServer); this.toast(this.t('toast_server_added')); }
         this.servers = r.servers; this.showServerForm = false;
       } catch (e) { this.toast(e.message, 'error'); }
-      this.$nextTick(() => lucide.createIcons());
     },
     async deleteServer(i) {
       if (!confirm(this.t('confirm_delete_server', this.servers[i].name))) return;
       try { const r = await this.api('DELETE', `/api/servers/${i}`); this.servers = r.servers; this.toast(this.t('toast_deleted', r.removed)); }
       catch (e) { this.toast(e.message, 'error'); }
-      this.$nextTick(() => lucide.createIcons());
+    },
+    async toggleFiles(i) {
+      if (this.expandedServer === i) { this.expandedServer = null; return; }
+      this.expandedServer = i;
+      this.remoteFiles = []; this.remoteFilesPath = ''; this.remoteFilesError = '';
+      this.remoteFilesLoading = true;
+      try {
+        const r = await this.api('GET', `/api/servers/${i}/files`);
+        this.remoteFiles = r.files || [];
+        this.remoteFilesPath = r.path || '';
+      } catch (e) { this.remoteFilesError = e.message; }
+      this.remoteFilesLoading = false;
+      this.$nextTick(() => window._refreshIcons && window._refreshIcons());
+    },
+    fileIcon(f) {
+      if (f.type === 'dir') return 'folder';
+      const ext = (f.name.split('.').pop() || '').toLowerCase();
+      const map = {
+        js:'file-code-2', ts:'file-code-2', jsx:'file-code-2', tsx:'file-code-2',
+        py:'file-code-2', rb:'file-code-2', go:'file-code-2', rs:'file-code-2',
+        java:'file-code-2', c:'file-code-2', cpp:'file-code-2', h:'file-code-2',
+        cs:'file-code-2', php:'file-code-2', sh:'file-code-2', bat:'file-code-2',
+        vue:'file-code-2', svelte:'file-code-2', dart:'file-code-2',
+        html:'file-code-2', css:'file-code-2', scss:'file-code-2', less:'file-code-2',
+        json:'file-json', yaml:'file-text', yml:'file-text', toml:'file-text',
+        xml:'file-code-2', sql:'file-text',
+        md:'file-text', txt:'file-text', log:'file-text', csv:'file-text',
+        ini:'file-text', cfg:'file-text', conf:'file-text', env:'file-text',
+        png:'image', jpg:'image', jpeg:'image', gif:'image', svg:'image',
+        bmp:'image', webp:'image', ico:'image',
+        zip:'archive', tar:'archive', gz:'archive', rar:'archive',
+        '7z':'archive', bz2:'archive',
+        mp3:'music', wav:'music', flac:'music', ogg:'music',
+        mp4:'video', avi:'video', mkv:'video', mov:'video',
+        pdf:'file-text', doc:'file-text', docx:'file-text', xls:'file-text', xlsx:'file-text',
+        lock:'file-lock-2',
+      };
+      return map[ext] || 'file';
+    },
+    fileIconColor(f) {
+      if (f.type === 'dir') return '#00bfff';
+      const ext = (f.name.split('.').pop() || '').toLowerCase();
+      const colors = {
+        js:'#ffb800', ts:'#00bfff', jsx:'#00bfff', tsx:'#00bfff',
+        py:'#00ff9f', json:'#ffb800', md:'#666',
+        html:'#ff4444', css:'#00bfff', vue:'#00ff9f',
+        png:'#ff79c6', jpg:'#ff79c6', jpeg:'#ff79c6', gif:'#ff79c6', svg:'#ff79c6',
+        sh:'#00ff9f', yml:'#ff4444', yaml:'#ff4444',
+        lock:'#666',
+      };
+      return colors[ext] || '#666';
     },
 
     async loadProjects() {
       try { this.projects = await this.api('GET', '/api/projects'); } catch (e) { this.toast(e.message, 'error'); }
-      this.$nextTick(() => lucide.createIcons());
     },
     editProject(i) {
       this.editingProjectIdx = i;
@@ -867,7 +1101,19 @@ function app() {
         this.toast(this.t('toast_project_updated', r.project));
       } catch (e) { this.toast(e.message, 'error'); }
       this.settingUp = false;
-      this.$nextTick(() => lucide.createIcons());
+    },
+    async browseFolder() {
+      this.browsing = true;
+      try {
+        const r = await this.api('GET', '/api/browse-folder');
+        if (r.ok && r.path) {
+          this.setupForm.path = r.path.replace(/\//g, '\\');
+          if (!this.setupForm.name) {
+            this.setupForm.name = r.path.split(/[\/\\]/).pop() || '';
+          }
+        }
+      } catch (e) { this.toast(e.message, 'error'); }
+      this.browsing = false;
     },
     async setupProject() {
       this.settingUp = true;
@@ -878,7 +1124,6 @@ function app() {
         this.toast(this.t('toast_project_configured', r.project));
       } catch (e) { this.toast(e.message, 'error'); }
       this.settingUp = false;
-      this.$nextTick(() => lucide.createIcons());
     },
     async openWindsurf(i) {
       try { const r = await this.api('POST', `/api/projects/${i}/open`); this.toast(this.t('toast_opened', r.project)); }
@@ -892,12 +1137,10 @@ function app() {
       if (!confirm(this.t('confirm_remove_project', this.projects[i].name))) return;
       try { const r = await this.api('DELETE', `/api/projects/${i}`); this.projects = r.projects; this.toast(this.t('toast_removed', r.removed)); }
       catch (e) { this.toast(e.message, 'error'); }
-      this.$nextTick(() => lucide.createIcons());
     },
 
     async loadSessions() {
       try { this.sessions = await this.api('GET', '/api/sessions'); } catch (e) {}
-      this.$nextTick(() => lucide.createIcons());
     },
     _wsDelay: 1000,
     connectWS() {
@@ -920,8 +1163,7 @@ function app() {
         } else if (d.sessions) {
           this.sessions = d.sessions;
         }
-        this.$nextTick(() => lucide.createIcons());
-      };
+        };
       this.ws.onclose = () => {
         setTimeout(() => this.connectWS(), this._wsDelay);
         this._wsDelay = Math.min(this._wsDelay * 1.5, 30000);

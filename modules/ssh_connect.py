@@ -17,7 +17,17 @@ def connect(server: dict) -> None:
         cmd.extend(["-p", str(server["port"])])
 
     if server.get("key"):
-        key_path = os.path.expanduser(server["key"])
+        key_val = server["key"]
+        if "PRIVATE KEY" in key_val:
+            from modules.ssh_manager import save_key_content_to_file, load_servers, save_servers
+            key_path = save_key_content_to_file(server.get("name", "default"), key_val)
+            servers = load_servers()
+            for s in servers:
+                if s.get("name") == server["name"] and "PRIVATE KEY" in s.get("key", ""):
+                    s["key"] = key_path
+            save_servers(servers)
+        else:
+            key_path = os.path.expanduser(key_val)
         cmd.extend(["-i", key_path])
 
     remote_cmd = ""

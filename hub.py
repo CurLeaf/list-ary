@@ -182,8 +182,9 @@ def cli_open(args):
 
 def cli_clean(args):
     import httpx
+    from config import get_port
     try:
-        resp = httpx.delete("http://localhost:9000/api/sessions", timeout=5)
+        resp = httpx.delete(f"http://localhost:{get_port()}/api/sessions", timeout=5)
         if resp.status_code == 200:
             print(f"已清理 {resp.json().get('cleaned', 0)} 个会话")
     except Exception:

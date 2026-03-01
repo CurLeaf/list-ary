@@ -1,1 +1,9 @@
-[]
+[
+  {
+    "name": "qunxing-erp",
+    "host": "8.136.111.134",
+    "port": 22,
+    "path": "/www/wwwroot/qx1.exploreai.club/docker",
+    "key": "D:\\GitHub\\list-ary\\ssh_keys\\default_key"
+  }
+]

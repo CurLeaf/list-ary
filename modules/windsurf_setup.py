@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import sys
+import time
 
 from rich.console import Console
 from rich.prompt import Prompt
@@ -96,12 +97,22 @@ def get_projects_config_path() -> str:
     return os.path.join(get_data_dir(), "projects.json")
 
 
+# ─── 项目列表缓存（10秒 TTL） ───
+_projects_cache: dict = {"data": None, "ts": 0.0, "ttl": 10.0}
+
+
 def load_projects() -> list[dict]:
     """加载已配置的项目列表"""
+    now = time.time()
+    if _projects_cache["data"] is not None and now - _projects_cache["ts"] < _projects_cache["ttl"]:
+        return _projects_cache["data"]
     path = get_projects_config_path()
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            result = json.load(f)
+            _projects_cache["data"] = result
+            _projects_cache["ts"] = now
+            return result
     return []
 
 
@@ -111,10 +122,15 @@ def save_projects(projects: list[dict]):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(projects, f, ensure_ascii=False, indent=2)
+    _projects_cache["data"] = projects
+    _projects_cache["ts"] = time.time()
 
 
-def inject_to_project(project_path: str, project_name: str, dashboard_url: str = "http://localhost:9000"):
+def inject_to_project(project_path: str, project_name: str, dashboard_url: str = None):
     """向目标项目注入 .windsurf/ 配置"""
+    if dashboard_url is None:
+        from config import get_port
+        dashboard_url = f"http://localhost:{get_port()}"
     windsurf_dir = os.path.join(project_path, ".windsurf")
     workflows_dir = os.path.join(windsurf_dir, "workflows")
     reports_dir = os.path.join(windsurf_dir, "reports")

@@ -5,6 +5,7 @@ SSH 服务器配置管理 — 增删改查
 import json
 import os
 import sys
+import time
 
 from rich.console import Console
 from rich.prompt import Prompt
@@ -25,11 +26,21 @@ def _get_servers_write_path() -> str:
     return os.path.join(get_data_dir(), "servers.json")
 
 
+# ─── 服务器列表缓存（10秒 TTL） ───
+_servers_cache: dict = {"data": None, "ts": 0.0, "ttl": 10.0}
+
+
 def load_servers() -> list[dict]:
+    now = time.time()
+    if _servers_cache["data"] is not None and now - _servers_cache["ts"] < _servers_cache["ttl"]:
+        return _servers_cache["data"]
     path = _get_servers_read_path()
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            result = json.load(f)
+            _servers_cache["data"] = result
+            _servers_cache["ts"] = now
+            return result
     return []
 
 
@@ -38,6 +49,25 @@ def save_servers(servers: list[dict]):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(servers, f, ensure_ascii=False, indent=2)
+    _servers_cache["data"] = servers
+    _servers_cache["ts"] = time.time()
+
+
+def save_key_content_to_file(server_name: str, key_content: str) -> str:
+    """将 SSH 密钥内容保存为文件，返回文件路径（统一入口，消除重复代码）"""
+    import re
+    safe_name = re.sub(r'[^\w\-]', '_', server_name).strip('_') or 'default'
+    keys_dir = os.path.join(get_data_dir(), "ssh_keys")
+    os.makedirs(keys_dir, exist_ok=True)
+    key_path = os.path.join(keys_dir, f"{safe_name}_key")
+    content = key_content if key_content.endswith('\n') else key_content + '\n'
+    with open(key_path, "w", encoding="utf-8", newline='\n') as f:
+        f.write(content)
+    try:
+        os.chmod(key_path, 0o600)
+    except Exception:
+        pass
+    return key_path
 
 
 def show_servers(servers: list[dict]):

@@ -6,6 +6,7 @@ import threading
 import uuid
 import json
 from datetime import datetime, timezone, timedelta
+from functools import partial
 
 from utils import get_data_dir
 
@@ -206,6 +207,7 @@ def clean_all_sessions() -> int:
     count = cursor.rowcount
     conn.execute("UPDATE task_counter SET count = 0 WHERE id = 1")
     conn.commit()
+    _reply_events.clear()
     return count
 
 
@@ -233,8 +235,9 @@ def get_session_context(session_id: str) -> str:
 
 def check_stuck_sessions() -> list[str]:
     """检查超时会话，标记为 stuck，返回被标记的 session_id 列表"""
+    from config import get_stuck_timeout
     conn = _get_conn()
-    threshold = (datetime.now(timezone(timedelta(hours=8))) - timedelta(minutes=STUCK_TIMEOUT_MINUTES)).isoformat()
+    threshold = (datetime.now(timezone(timedelta(hours=8))) - timedelta(minutes=get_stuck_timeout())).isoformat()
     cursor = conn.execute("""
         SELECT session_id FROM sessions
         WHERE status = 'executing' AND last_active < ? AND last_active != ''
@@ -289,10 +292,56 @@ def clean_expired_sessions(expire_days: int = 7) -> int:
     """清理 N 天前的已完成/已取消会话，返回清理数量"""
     conn = _get_conn()
     cutoff = (datetime.now(timezone.utc) - timedelta(days=expire_days)).isoformat()
+    # 先查出要删的 session_id，以便清理 _reply_events
     cursor = conn.execute(
-        "DELETE FROM sessions WHERE status IN ('completed', 'cancelled') AND last_active < ?",
+        "SELECT session_id FROM sessions WHERE status IN ('completed', 'cancelled') AND last_active < ?",
         (cutoff,)
     )
-    cleaned = cursor.rowcount
+    expired_ids = [row[0] for row in cursor.fetchall()]
+    if not expired_ids:
+        return 0
+    placeholders = ",".join("?" * len(expired_ids))
+    conn.execute(f"DELETE FROM sessions WHERE session_id IN ({placeholders})", expired_ids)
     conn.commit()
-    return cleaned
+    for sid in expired_ids:
+        _reply_events.pop(sid, None)
+    return len(expired_ids)
+
+
+# ─── 异步包装层（避免阻塞 FastAPI 事件循环） ───
+
+async def async_init_db():
+    return await asyncio.to_thread(init_db)
+
+async def async_create_or_update_session(**kwargs):
+    return await asyncio.to_thread(partial(create_or_update_session, **kwargs))
+
+async def async_set_reply(session_id: str, reply: str) -> bool:
+    return await asyncio.to_thread(set_reply, session_id, reply)
+
+async def async_get_reply(session_id: str):
+    return await asyncio.to_thread(get_reply, session_id)
+
+async def async_get_session(session_id: str):
+    return await asyncio.to_thread(get_session, session_id)
+
+async def async_get_all_sessions():
+    return await asyncio.to_thread(get_all_sessions)
+
+async def async_update_session_status(session_id: str, status: str) -> bool:
+    return await asyncio.to_thread(update_session_status, session_id, status)
+
+async def async_delete_session(session_id: str) -> bool:
+    return await asyncio.to_thread(delete_session, session_id)
+
+async def async_clean_all_sessions() -> int:
+    return await asyncio.to_thread(clean_all_sessions)
+
+async def async_get_session_context(session_id: str) -> str:
+    return await asyncio.to_thread(get_session_context, session_id)
+
+async def async_check_stuck_sessions() -> list[str]:
+    return await asyncio.to_thread(check_stuck_sessions)
+
+async def async_clean_expired_sessions(expire_days: int = 7) -> int:
+    return await asyncio.to_thread(clean_expired_sessions, expire_days)
