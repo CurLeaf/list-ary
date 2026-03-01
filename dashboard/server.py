@@ -466,6 +466,23 @@ async def open_project(index: int):
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
+@app.post("/api/projects/{index}/reinject")
+async def reinject_project(index: int):
+    """重新注入 .windsurf/ 配置到已有项目（更新 workflows + rules）"""
+    from modules.windsurf_setup import load_projects, inject_to_project
+    projects = load_projects()
+    if not (0 <= index < len(projects)):
+        return JSONResponse(status_code=404, content={"error": "项目不存在"})
+    project = projects[index]
+    if not os.path.isdir(project["path"]):
+        return JSONResponse(status_code=404, content={"error": f"项目目录不存在: {project['path']}"})
+    try:
+        inject_to_project(project["path"], project["name"])
+        return {"ok": True, "project": project["name"]}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
 @app.delete("/api/projects/{index}")
 async def remove_project(index: int):
     """从项目列表移除（不删除文件）"""

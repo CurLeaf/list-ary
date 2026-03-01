@@ -148,17 +148,90 @@ def poll_reply(dashboard_url: str, session_id: str, timeout: int = 30) -> str | 
     return None
 
 
+def cmd_sync(script_dir: str, config: dict):
+    """--sync: 输出上次会话上下文供新会话使用"""
+    reports_dir = ensure_reports_dir(script_dir)
+    session_id = get_session_id(script_dir)
+    latest = get_latest_report(reports_dir)
+    dashboard_url = config.get("dashboard_url", "http://localhost:9000")
+
+    lines = [f"\u9879\u76ee: {config['project_name']}"]
+    if session_id:
+        lines.append(f"\u4f1a\u8bdd: {session_id}")
+        # 尝试从中台拉取上下文
+        try:
+            import httpx
+            resp = httpx.get(f"{dashboard_url.rstrip('/')}/api/sessions/{session_id}/context", timeout=5)
+            if resp.status_code == 200:
+                lines.append(resp.json().get("context", ""))
+        except Exception:
+            pass
+    if latest:
+        lines.append(f"\u4e0a\u6b21\u4efb\u52a1: {latest.get('task', '')}")
+        lines.append(f"\u72b6\u6001: {latest.get('status', '')}")
+        if latest.get("reply"):
+            lines.append(f"\u56de\u590d: {latest['reply']}")
+        if latest.get("questions"):
+            qs = latest["questions"]
+            if isinstance(qs, list):
+                qs = "; ".join(qs)
+            lines.append(f"\u7591\u95ee: {qs}")
+    if len(lines) <= 1:
+        print("[INFO] \u65e0\u5386\u53f2\u4f1a\u8bdd")
+        return
+    print("\n".join(lines))
+
+
+def cmd_check_status(script_dir: str, config: dict):
+    """--check-status: 查询当前会\u8bdd\u72b6\u6001"""
+    session_id = get_session_id(script_dir)
+    if not session_id:
+        print("[INFO] \u65e0\u6d3b\u8dc3\u4f1a\u8bdd")
+        return
+    dashboard_url = config.get("dashboard_url", "http://localhost:9000")
+    try:
+        import httpx
+        resp = httpx.get(f"{dashboard_url.rstrip('/')}/api/sessions", timeout=5)
+        if resp.status_code == 200:
+            for s in resp.json():
+                if s.get("session_id") == session_id:
+                    print(f"\u4f1a\u8bdd: {session_id}")
+                    print(f"\u72b6\u6001: {s.get('status', 'unknown')}")
+                    print(f"\u4efb\u52a1: {s.get('task', '')}")
+                    if s.get("reply"):
+                        print(f"\u56de\u590d: {s['reply']}")
+                    return
+        print(f"[INFO] \u4f1a\u8bdd {session_id} \u5728\u4e2d\u53f0\u672a\u627e\u5230")
+    except Exception as e:
+        print(f"[ERROR] \u67e5\u8be2\u5931\u8d25: {e}", file=sys.stderr)
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Windsurf 上报脚本")
-    parser.add_argument("--task", required=True, help="任务描述")
-    parser.add_argument("--status", default="completed", help="状态: completed|partial|blocked|need_confirm")
-    parser.add_argument("--questions", default="", help="疑问点，多个用 | 分隔")
-    parser.add_argument("--offline", action="store_true", help="离线模式，只存本地不提交中台")
-    parser.add_argument("--max-wait", type=int, default=3600, help="最大等待回复秒数（默认 3600）")
+    parser = argparse.ArgumentParser(description="Windsurf \u4e0a\u62a5\u811a\u672c")
+    parser.add_argument("--task", default="", help="\u4efb\u52a1\u63cf\u8ff0")
+    parser.add_argument("--status", default="completed", help="\u72b6\u6001: completed|partial|blocked|need_confirm")
+    parser.add_argument("--questions", default="", help="\u7591\u95ee\u70b9\uff0c\u591a\u4e2a\u7528 | \u5206\u9694")
+    parser.add_argument("--offline", action="store_true", help="\u79bb\u7ebf\u6a21\u5f0f\uff0c\u53ea\u5b58\u672c\u5730\u4e0d\u63d0\u4ea4\u4e2d\u53f0")
+    parser.add_argument("--max-wait", type=int, default=3600, help="\u6700\u5927\u7b49\u5f85\u56de\u590d\u79d2\u6570\uff08\u9ed8\u8ba4 3600\uff09")
+    parser.add_argument("--sync", action="store_true", help="\u540c\u6b65\u4e0a\u6b21\u4f1a\u8bdd\u4e0a\u4e0b\u6587")
+    parser.add_argument("--check-status", action="store_true", help="\u67e5\u8be2\u5f53\u524d\u4f1a\u8bdd\u72b6\u6001")
+    parser.add_argument("--auto", action="store_true", help="\u81ea\u52a8\u6a21\u5f0f\uff1a\u4e0a\u62a5\u540e\u4e0d\u7b49\u5f85\u56de\u590d")
+    parser.add_argument("--context", default="", help="\u9644\u52a0\u4e0a\u4e0b\u6587\u4fe1\u606f")
     args = parser.parse_args()
 
     script_dir = get_script_dir()
     config = load_config(script_dir)
+
+    # \u5b50\u547d\u4ee4\u5206\u53d1
+    if args.sync:
+        cmd_sync(script_dir, config)
+        return
+    if args.check_status:
+        cmd_check_status(script_dir, config)
+        return
+    if not args.task:
+        parser.error("--task is required (unless using --sync or --check-status)")
+
     reports_dir = ensure_reports_dir(script_dir)
 
     project_name = config["project_name"]
@@ -176,11 +249,15 @@ def main():
     report_id = get_next_report_id(reports_dir)
     timestamp = now_iso()
 
+    task_text = args.task
+    if args.context:
+        task_text = f"{args.task}\n---\n{args.context}"
+
     report_data = {
         "id": report_id,
         "session_id": session_id or "",
         "project": project_name,
-        "task": args.task,
+        "task": task_text,
         "previous_request": previous_request,
         "status": args.status,
         "questions": questions,
@@ -202,7 +279,7 @@ def main():
     payload = {
         "session_id": session_id,
         "project": project_name,
-        "task": args.task,
+        "task": task_text,
         "previous_request": previous_request,
         "status": args.status,
         "questions": questions,
@@ -223,6 +300,10 @@ def main():
             json.dump(report_data, f, ensure_ascii=False, indent=2)
 
     print(f"[INFO] 已提交中台, session={new_session_id}, task_id={result.get('task_id')}", file=sys.stderr)
+
+    if args.auto:
+        print(json.dumps({"status": "reported", "session_id": new_session_id}, ensure_ascii=False))
+        return
 
     # ⑤ 长轮询等待回复
     print(f"[INFO] 等待用户回复（最长 {args.max_wait}s）...", file=sys.stderr)

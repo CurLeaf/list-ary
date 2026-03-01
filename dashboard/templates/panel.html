@@ -443,6 +443,7 @@
                   </div>
                 </div>
                 <div class="flex gap-1.5 shrink-0 ml-3">
+                  <button class="btn-ghost text-[10px]" @click="reinjectProject(i)" x-text="t('btn_reinject')"></button>
                   <button class="btn-ghost text-[10px]" @click="editProject(i)" x-text="t('btn_edit')"></button>
                   <button class="btn-success text-[10px]" @click="openWindsurf(i)" x-text="t('btn_open')"></button>
                   <button class="btn-danger text-[10px]" @click="removeProject(i)" x-text="t('btn_del')"></button>
@@ -627,37 +628,37 @@ document.addEventListener('alpine:initialized', () => {
 
 const _i18n = {
   zh: {
-    nav_kill:'KILL PORT', nav_ssh:'SSH', nav_sshcfg:'SSH CFG', nav_windsurf:'WINDSURF',
-    nav_board:'BOARD', nav_config:'CONFIG', nav_clean:'CLEAN',
-    kill_title:'// Kill Port',
+    nav_kill:'终止端口', nav_ssh:'SSH 连接', nav_sshcfg:'SSH 配置', nav_windsurf:'WINDSURF',
+    nav_board:'看板', nav_config:'设置', nav_clean:'清理',
+    kill_title:'// 终止端口',
     kill_desc:'输入端口号，查找并终止监听进程',
-    kill_killing:'KILLING...', kill_btn:'KILL',
+    kill_killing:'终止中...', kill_btn:'终止',
     kill_no_process:'[--] 端口 {0} 无监听进程',
     kill_terminated:'[OK] 已终止 {0} 个进程',
-    kill_listening:'Listening', kill_search:'search...',
-    kill_loading:'LOADING', kill_refresh:'REFRESH',
+    kill_listening:'监听中', kill_search:'搜索...',
+    kill_loading:'加载中', kill_refresh:'刷新',
     kill_no_data:'暂无数据',
-    ssh_title:'// SSH Connect', ssh_no_server:'暂无服务器', ssh_add_server:'ADD SERVER',
-    sshcfg_title:'// SSH Config', sshcfg_add:'+ ADD',
+    ssh_title:'// SSH 连接', ssh_no_server:'暂无服务器', ssh_add_server:'添加服务器',
+    sshcfg_title:'// SSH 配置', sshcfg_add:'+ 添加',
     sshcfg_no_config:'暂无服务器配置',
-    sshcfg_edit_title:'// EDIT SERVER', sshcfg_add_title:'// ADD SERVER',
-    label_name:'Name', label_host:'Host', label_port:'Port',
-    label_ssh_key:'SSH Key', label_remote_path:'Remote Path',
-    btn_cancel:'CANCEL', btn_save:'SAVE', btn_edit:'EDIT', btn_del:'DEL',
-    ws_title:'// Windsurf', ws_setup:'+ SETUP',
+    sshcfg_edit_title:'// 编辑服务器', sshcfg_add_title:'// 添加服务器',
+    label_name:'名称', label_host:'主机', label_port:'端口',
+    label_ssh_key:'SSH 密钥', label_remote_path:'远程路径',
+    btn_cancel:'取消', btn_save:'保存', btn_edit:'编辑', btn_del:'删除', btn_reinject:'重注入',
+    ws_title:'// Windsurf', ws_setup:'+ 配置',
     ws_no_project:'暂无项目',
-    ws_edit_title:'// EDIT PROJECT', ws_setup_title:'// SETUP PROJECT',
+    ws_edit_title:'// 编辑项目', ws_setup_title:'// 配置项目',
     ws_inject_desc:'自动注入 .windsurf/workflows/ 规则和上报脚本',
-    label_path:'Path', btn_open:'OPEN', btn_setup:'SETUP', btn_working:'WORKING...',
-    dash_title:'// Dashboard', dash_no_session:'暂无活跃会话',
-    btn_fix:'FIX', btn_cpy:'CPY', btn_send:'SEND', dash_reply_ph:'reply...',
-    cfg_title:'// Config',
-    cfg_autostart:'Auto Start', cfg_autostart_desc:'开机时自动启动 Listary 工具集',
-    cfg_port:'Server Port', cfg_port_desc:'默认 9000，修改后重启生效',
-    cfg_stuck:'Stuck Timeout (min)', cfg_expire:'Session Expire (days)',
-    cfg_ws_path:'Windsurf Path', cfg_lang:'Language', cfg_lang_desc:'界面显示语言',
+    label_path:'路径', btn_open:'打开', btn_setup:'配置', btn_working:'处理中...',
+    dash_title:'// 看板', dash_no_session:'暂无活跃会话',
+    btn_fix:'修复', btn_cpy:'复制', btn_send:'发送', dash_reply_ph:'输入回复...',
+    cfg_title:'// 设置',
+    cfg_autostart:'开机自启', cfg_autostart_desc:'开机时自动启动 Listary 工具集',
+    cfg_port:'服务端口', cfg_port_desc:'默认 9000，修改后重启生效',
+    cfg_stuck:'卡住超时 (分钟)', cfg_expire:'会话过期 (天)',
+    cfg_ws_path:'Windsurf 路径', cfg_lang:'语言', cfg_lang_desc:'界面显示语言',
     toast_killed:'终止 {0} 个进程', toast_no_listen:'端口 {0} 无监听',
-    toast_connected:'连接: {0}', toast_server_updated:'服务器已更新',
+    toast_connected:'已连接: {0}', toast_server_updated:'服务器已更新',
     toast_server_added:'服务器已添加', toast_deleted:'已删除: {0}',
     toast_project_updated:'项目已更新: {0}', toast_project_configured:'项目已配置: {0}',
     toast_opened:'已打开: {0}', toast_removed:'已移除: {0}',
@@ -686,7 +687,7 @@ const _i18n = {
     sshcfg_edit_title:'// EDIT SERVER', sshcfg_add_title:'// ADD SERVER',
     label_name:'Name', label_host:'Host', label_port:'Port',
     label_ssh_key:'SSH Key', label_remote_path:'Remote Path',
-    btn_cancel:'CANCEL', btn_save:'SAVE', btn_edit:'EDIT', btn_del:'DEL',
+    btn_cancel:'CANCEL', btn_save:'SAVE', btn_edit:'EDIT', btn_del:'DEL', btn_reinject:'REINJECT',
     ws_title:'// Windsurf', ws_setup:'+ SETUP',
     ws_no_project:'No projects',
     ws_edit_title:'// EDIT PROJECT', ws_setup_title:'// SETUP PROJECT',
@@ -881,6 +882,10 @@ function app() {
     },
     async openWindsurf(i) {
       try { const r = await this.api('POST', `/api/projects/${i}/open`); this.toast(this.t('toast_opened', r.project)); }
+      catch (e) { this.toast(e.message, 'error'); }
+    },
+    async reinjectProject(i) {
+      try { const r = await this.api('POST', `/api/projects/${i}/reinject`); this.toast(`[OK] ${r.project} workflows updated`); }
       catch (e) { this.toast(e.message, 'error'); }
     },
     async removeProject(i) {
