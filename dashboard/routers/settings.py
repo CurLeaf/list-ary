@@ -37,6 +37,7 @@ async def get_settings():
         "stuck_timeout": s.get("stuck_timeout", STUCK_TIMEOUT_MINUTES),
         "session_expire_days": s.get("session_expire_days", SESSION_EXPIRE_DAYS),
         "windsurf_path": s.get("windsurf_path", ""),
+        "webhook_url": s.get("webhook_url", ""),
         "lang": s.get("lang", "zh"),
     }
 
@@ -46,10 +47,9 @@ async def save_settings_api(req: dict):
     """保存用户设置"""
     from config import load_settings, save_settings
     current = load_settings()
-    for k in ("port", "stuck_timeout", "session_expire_days", "windsurf_path", "lang"):
+    for k in ("port", "stuck_timeout", "session_expire_days", "windsurf_path", "webhook_url", "lang"):
         if k in req:
             current[k] = req[k]
-    # 类型校验：数值字段必须为正整数
     for k in ("port", "stuck_timeout", "session_expire_days"):
         if k in current:
             try:
@@ -60,3 +60,15 @@ async def save_settings_api(req: dict):
                 return JSONResponse(status_code=400, content={"error": f"{k} 必须为正整数"})
     save_settings(current)
     return {"ok": True}
+
+
+@router.post("/webhook/test")
+async def test_webhook(req: dict):
+    """测试 Webhook 通知"""
+    import asyncio
+    from modules.webhook import send
+    url = req.get("url", "").strip()
+    if not url:
+        return JSONResponse(status_code=400, content={"error": "URL 不能为空"})
+    ok, err = await asyncio.to_thread(send, url, "Listary Test", "Webhook 通知测试成功 / Webhook test OK")
+    return {"ok": ok, "error": err}

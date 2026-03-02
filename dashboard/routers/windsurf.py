@@ -1,4 +1,4 @@
-"""Windsurf 项目管理 API 路由"""
+"""项目管理 API 路由 — 支持 Windsurf / Cursor / 可扩展 IDE"""
 
 import asyncio
 import os
@@ -7,8 +7,18 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from dashboard.models import ProjectSetup
+from modules.ide_profiles import (
+    IDE_CHOICES, PROFILES,
+    find_executable, is_project_configured,
+)
 
-router = APIRouter(tags=["windsurf"])
+router = APIRouter(tags=["projects"])
+
+
+@router.get("/ide-profiles")
+async def list_ide_profiles():
+    """返回可用 IDE 列表"""
+    return [{"id": k, "name": v["name"]} for k, v in PROFILES.items()]
 
 
 @router.get("/browse-folder")
@@ -50,22 +60,24 @@ async def browse_folder():
 
 @router.get("/projects")
 async def list_projects():
-    """获取 Windsurf 项目列表"""
+    """获取项目列表（含 IDE 类型和配置状态）"""
     from modules.windsurf_setup import load_projects
     projects = load_projects()
     for p in projects:
-        ws_dir = os.path.join(p["path"], ".windsurf")
-        p["configured"] = os.path.isdir(ws_dir)
+        ide = p.get("ide", "windsurf")
+        p["configured"] = is_project_configured(p["path"], ide)
+        p["ide_name"] = PROFILES.get(ide, {}).get("name", ide)
     return projects
 
 
 @router.post("/projects/setup")
 async def setup_project(req: ProjectSetup):
-    """配置 Windsurf 项目"""
+    """配置项目（注入 IDE 规则 + 上报脚本）"""
     from modules.windsurf_setup import inject_to_project, load_projects
     from config import get_port
     project_path = req.path.strip().strip('"')
     project_name = req.name.strip()
+    ide = req.ide if req.ide in IDE_CHOICES else "windsurf"
     dashboard_url = f"http://localhost:{get_port()}"
 
     if not project_path or not os.path.isdir(project_path):
@@ -74,29 +86,34 @@ async def setup_project(req: ProjectSetup):
         project_name = os.path.basename(os.path.abspath(project_path))
 
     try:
-        inject_to_project(project_path, project_name, dashboard_url)
-        return {"ok": True, "project": project_name, "path": project_path, "projects": load_projects()}
+        inject_to_project(project_path, project_name, dashboard_url, ide=ide)
+        projects = load_projects()
+        for p in projects:
+            p["configured"] = is_project_configured(p["path"], p.get("ide", "windsurf"))
+            p["ide_name"] = PROFILES.get(p.get("ide", "windsurf"), {}).get("name", p.get("ide", "windsurf"))
+        return {"ok": True, "project": project_name, "path": project_path, "projects": projects}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 @router.post("/projects/{index}/open")
 async def open_project(index: int):
-    """用 Windsurf 打开项目"""
+    """用对应 IDE 打开项目"""
     from modules.windsurf_setup import load_projects
-    from modules.windsurf_open import find_windsurf
     projects = load_projects()
     if not (0 <= index < len(projects)):
         return JSONResponse(status_code=404, content={"error": "项目不存在"})
     project = projects[index]
+    ide = project.get("ide", "windsurf")
+    ide_name = PROFILES.get(ide, {}).get("name", ide)
 
-    ws_path = find_windsurf()
-    if not ws_path:
-        return JSONResponse(status_code=404, content={"error": "未找到 Windsurf，请在设置中指定路径"})
+    exe_path = find_executable(ide)
+    if not exe_path:
+        return JSONResponse(status_code=404, content={"error": f"未找到 {ide_name}，请在设置中指定路径"})
 
     import subprocess
     try:
-        subprocess.Popen([ws_path, project["path"]])
+        subprocess.Popen([exe_path, project["path"]])
         return {"ok": True, "project": project["name"]}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
@@ -104,7 +121,7 @@ async def open_project(index: int):
 
 @router.post("/projects/{index}/reinject")
 async def reinject_project(index: int):
-    """重新注入 .windsurf/ 配置到已有项目（更新 workflows + rules）"""
+    """重新注入 IDE 配置到已有项目"""
     from modules.windsurf_setup import load_projects, inject_to_project
     projects = load_projects()
     if not (0 <= index < len(projects)):
@@ -112,8 +129,9 @@ async def reinject_project(index: int):
     project = projects[index]
     if not os.path.isdir(project["path"]):
         return JSONResponse(status_code=404, content={"error": f"项目目录不存在: {project['path']}"})
+    ide = project.get("ide", "windsurf")
     try:
-        inject_to_project(project["path"], project["name"])
+        inject_to_project(project["path"], project["name"], ide=ide)
         return {"ok": True, "project": project["name"]}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})

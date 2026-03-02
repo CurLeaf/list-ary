@@ -148,17 +148,31 @@ def poll_reply(dashboard_url: str, session_id: str, timeout: int = 30) -> str | 
     return None
 
 
+def _load_recent_reports(reports_dir: str, max_count: int = 5) -> list[dict]:
+    """加载最近 N 条本地上报记录"""
+    if not os.path.exists(reports_dir):
+        return []
+    files = sorted([f for f in os.listdir(reports_dir) if f.endswith(".json")], reverse=True)
+    result = []
+    for f in files[:max_count]:
+        try:
+            with open(os.path.join(reports_dir, f), "r", encoding="utf-8") as fh:
+                result.append(json.load(fh))
+        except Exception:
+            pass
+    result.reverse()
+    return result
+
+
 def cmd_sync(script_dir: str, config: dict):
-    """--sync: 输出上次会话上下文供新会话使用"""
+    """--sync: 输出上次会话上下文供新会话使用（含最近 5 条任务历史）"""
     reports_dir = ensure_reports_dir(script_dir)
     session_id = get_session_id(script_dir)
-    latest = get_latest_report(reports_dir)
     dashboard_url = config.get("dashboard_url", "http://localhost:9000")
 
-    lines = [f"\u9879\u76ee: {config['project_name']}"]
+    lines = [f"项目: {config['project_name']}"]
     if session_id:
-        lines.append(f"\u4f1a\u8bdd: {session_id}")
-        # 尝试从中台拉取上下文
+        lines.append(f"会话: {session_id}")
         try:
             import httpx
             resp = httpx.get(f"{dashboard_url.rstrip('/')}/api/sessions/{session_id}/context", timeout=5)
@@ -166,18 +180,26 @@ def cmd_sync(script_dir: str, config: dict):
                 lines.append(resp.json().get("context", ""))
         except Exception:
             pass
-    if latest:
-        lines.append(f"\u4e0a\u6b21\u4efb\u52a1: {latest.get('task', '')}")
-        lines.append(f"\u72b6\u6001: {latest.get('status', '')}")
-        if latest.get("reply"):
-            lines.append(f"\u56de\u590d: {latest['reply']}")
-        if latest.get("questions"):
-            qs = latest["questions"]
-            if isinstance(qs, list):
-                qs = "; ".join(qs)
-            lines.append(f"\u7591\u95ee: {qs}")
+
+    recent = _load_recent_reports(reports_dir, max_count=5)
+    if recent:
+        lines.append("")
+        lines.append("--- 最近任务历史 ---")
+        for r in recent:
+            status_tag = r.get("status", "?")
+            task_text = r.get("task", "").split("\n")[0][:80]
+            entry = f"[{status_tag}] {task_text}"
+            if r.get("reply"):
+                entry += f" → 回复: {r['reply'][:60]}"
+            if r.get("questions"):
+                qs = r["questions"]
+                if isinstance(qs, list):
+                    qs = "; ".join(qs)
+                entry += f" | 疑问: {qs[:60]}"
+            lines.append(entry)
+
     if len(lines) <= 1:
-        print("[INFO] \u65e0\u5386\u53f2\u4f1a\u8bdd")
+        print("[INFO] 无历史会话")
         return
     print("\n".join(lines))
 

@@ -22,6 +22,8 @@ a = Analysis(
     datas=rich_datas + [
         # 看板 HTML 模板
         (os.path.join('dashboard', 'templates', 'panel.html'), os.path.join('dashboard', 'templates')),
+        # 前端静态资源（离线可用）
+        (os.path.join('dashboard', 'static'), os.path.join('dashboard', 'static')),
         # 上报脚本模板（用于注入到项目）
         (os.path.join('report', 'report.py'), 'report'),
         (os.path.join('report', 'report_config.json'), 'report'),
@@ -69,9 +71,13 @@ a = Analysis(
         'modules.ssh_manager',
         'modules.windsurf_setup',
         'modules.windsurf_open',
+        'modules.ide_profiles',
+        'modules.webhook',
         'modules.autostart',
         'config',
         'utils',
+        'multipart',
+        'python_multipart',
         'webview',
         'pystray',
         'PIL',

@@ -5,12 +5,15 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 # EXE 兼容路径
 if getattr(sys, "frozen", False):
     TEMPLATES_DIR = os.path.join(sys._MEIPASS, "dashboard", "templates")
+    STATIC_DIR = os.path.join(sys._MEIPASS, "dashboard", "static")
 else:
     TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
+    STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 from fastapi.templating import Jinja2Templates
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
@@ -37,18 +40,26 @@ async def broadcast_ws(message: dict):
 
 
 async def send_toast_notification(project: str, task: str, status: str):
-    """发送 Windows 桌面 Toast 通知"""
+    """发送 Windows 桌面 Toast 通知 + Webhook 推送"""
     try:
         from winotify import Notification
         from config import get_port
         status_emoji = {"completed": "✅", "need_confirm": "🟠", "partial": "⚠️", "blocked": "🔴"}.get(status, "📋")
         toast = Notification(
-            app_id="Windsurf 调度看板",
+            app_id="Listary 看板",
             title=f"{status_emoji} {project}",
             msg=task[:100],
             launch=f"http://localhost:{get_port()}",
         )
         toast.show()
+    except Exception:
+        pass
+    try:
+        from config import load_settings
+        webhook_url = load_settings().get("webhook_url", "")
+        if webhook_url:
+            from modules.webhook import notify_session
+            await asyncio.to_thread(notify_session, webhook_url, project, task, status)
     except Exception:
         pass
 
@@ -100,6 +111,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Listary Tools", lifespan=lifespan)
 
+# ─── 静态文件 ───
+if os.path.isdir(STATIC_DIR):
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
 # ─── 注册路由 ───
 from dashboard.routers import ports, ssh, windsurf, sessions, settings
 app.include_router(ports.router, prefix="/api")
@@ -119,7 +134,8 @@ async def root_redirect():
 @app.get("/panel", response_class=HTMLResponse)
 async def panel_page(request: Request):
     """主面板页面"""
-    return templates.TemplateResponse("panel.html", {"request": request})
+    from version import __version__
+    return templates.TemplateResponse("panel.html", {"request": request, "version": f"v{__version__}"})
 
 
 # ─── WebSocket ───

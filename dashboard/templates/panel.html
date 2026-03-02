@@ -4,12 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Listary Tools</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+  <link rel="stylesheet" href="/static/jetbrains-mono.css">
+  <script src="/static/tailwind.js"></script>
+  <script src="/static/lucide.min.js"></script>
+  <script defer src="/static/alpine.min.js"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -193,6 +191,40 @@
     }
     .filter-btn:hover { border-color: #444; color: #e0e0e0; }
     .filter-btn.active { border-color: #00ff9f; color: #00ff9f; background: #1a3a2a; }
+
+    /* ── Mobile ── */
+    .mobile-header {
+      display: none;
+      position: sticky; top: 0; z-index: 30;
+      background: #0c0c0c;
+      border-bottom: 1px solid #2a2a2a;
+      padding: 10px 16px;
+      align-items: center; justify-content: space-between;
+    }
+    .mobile-overlay {
+      display: none;
+      position: fixed; inset: 0; z-index: 35;
+      background: rgba(0,0,0,0.6);
+    }
+    @media (max-width: 767px) {
+      .mobile-header { display: flex; }
+      .mobile-overlay.open { display: block; }
+      .desktop-sidebar {
+        position: fixed; top: 0; left: 0; bottom: 0; z-index: 40;
+        transform: translateX(-100%);
+        transition: transform 0.15s ease;
+        width: 200px !important;
+      }
+      .desktop-sidebar.open { transform: translateX(0); }
+      .desktop-content { padding-left: 0 !important; padding-right: 0 !important; }
+      .desktop-content .max-w-3xl { padding-left: 16px; padding-right: 16px; }
+      .card, .card-static { padding: 12px; }
+      .btn-primary, .btn-ghost, .btn-danger, .btn-success { padding: 8px 14px; font-size: 13px; }
+      .nav-item { padding: 12px 14px; font-size: 13px; }
+      .modal-panel { max-width: 100% !important; margin: 12px; border-radius: 8px; }
+      .filter-btn { padding: 6px 10px; }
+      body { -webkit-text-size-adjust: 100%; user-select: auto; }
+    }
   </style>
 </head>
 <body class="bg-term-bg text-term-text min-h-screen font-mono select-none" x-data="app()" x-cloak>
@@ -212,13 +244,25 @@
     </template>
   </div>
 
+  <!-- Mobile header -->
+  <div class="mobile-header">
+    <button class="text-term-dim" @click="mobileNav = !mobileNav" style="background:none;border:none;cursor:pointer;padding:4px;">
+      <i data-lucide="menu" style="width:20px;height:20px;"></i>
+    </button>
+    <span class="text-term-green text-xs font-bold tracking-wider">LISTARY</span>
+    <span class="text-term-dim text-[10px]">{{ version }}</span>
+  </div>
+
+  <!-- Mobile overlay -->
+  <div class="mobile-overlay" :class="mobileNav && 'open'" @click="mobileNav = false"></div>
+
   <div class="flex h-screen">
 
     <!-- ─── Sidebar ─── -->
-    <nav class="w-[190px] bg-term-bg flex flex-col shrink-0 border-r border-term-border">
+    <nav class="desktop-sidebar w-[190px] bg-term-bg flex flex-col shrink-0 border-r border-term-border" :class="mobileNav && 'open'">
       <div class="px-4 pt-5 pb-4">
         <div class="text-term-green text-xs font-bold tracking-wider">LISTARY</div>
-        <div class="text-term-dim text-[10px] mt-0.5">v1.0</div>
+        <div class="text-term-dim text-[10px] mt-0.5">{{ version }}</div>
       </div>
       <div class="border-t border-term-border mx-3 mb-2"></div>
 
@@ -237,7 +281,7 @@
         </button>
         <button class="nav-item" :class="tab === 'windsurf' && 'active'" @click="switchTab('windsurf'); loadProjects()">
           <span class="nav-prefix">></span>
-          <i data-lucide="folder-git-2" class="nav-icon"></i> <span x-text="t('nav_windsurf')"></span>
+          <i data-lucide="folder-git-2" class="nav-icon"></i> <span x-text="t('nav_projects')"></span>
         </button>
         <button class="nav-item" :class="tab === 'dashboard' && 'active'" @click="switchTab('dashboard'); loadSessions()">
           <span class="nav-prefix">></span>
@@ -259,7 +303,7 @@
     </nav>
 
     <!-- ─── Content ─── -->
-    <main class="flex-1 bg-term-bg overflow-y-auto">
+    <main class="flex-1 bg-term-bg overflow-y-auto desktop-content">
       <div class="max-w-3xl mx-auto px-6 py-6">
 
         <!-- ═══ KILL PORT ═══ -->
@@ -394,13 +438,18 @@
                       </div>
                     </div>
                     <!-- File grid -->
-                    <div class="grid grid-cols-2 gap-0.5" x-show="((fileBrowsers[i] || {}).files || []).length > 0">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-0.5" x-show="((fileBrowsers[i] || {}).files || []).length > 0">
                       <template x-for="f in ((fileBrowsers[i] || {}).files || [])" :key="f.name">
-                        <div class="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-term-card"
+                        <div class="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-term-card group/file"
                              :class="f.type === 'dir' ? 'cursor-pointer' : ''"
                              @click="f.type === 'dir' && enterDir(i, f)">
                           <i :data-lucide="fileIcon(f)" class="shrink-0" :style="'width:14px;height:14px;color:' + fileIconColor(f)"></i>
-                          <span class="text-[11px] truncate" :class="f.type === 'dir' ? 'text-term-cyan' : 'text-term-text'" x-text="f.name"></span>
+                          <span class="text-[11px] truncate flex-1" :class="f.type === 'dir' ? 'text-term-cyan' : 'text-term-text'" x-text="f.name"></span>
+                          <span class="hidden group-hover/file:flex items-center gap-0.5 shrink-0">
+                            <button x-show="f.type === 'file'" class="text-[9px] text-term-dim hover:text-term-green px-0.5" @click.stop="downloadFile(i, f)" title="download">↓</button>
+                            <button class="text-[9px] text-term-dim hover:text-term-cyan px-0.5" @click.stop="renameFile(i, f)" title="rename">✎</button>
+                            <button class="text-[9px] text-term-dim hover:text-term-red px-0.5" @click.stop="deleteFile(i, f)" title="delete">✕</button>
+                          </span>
                         </div>
                       </template>
                     </div>
@@ -552,7 +601,10 @@
                   <span class="text-xs" :class="p.configured ? 'text-term-green' : 'text-term-amber'"
                         x-text="p.configured ? '[OK]' : '[..]'"></span>
                   <div class="min-w-0">
-                    <span class="text-xs text-term-text" x-text="p.name"></span>
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs text-term-text" x-text="p.name"></span>
+                      <span class="text-[9px] px-1.5 py-0.5 rounded border border-term-border text-term-cyan" x-text="p.ide_name || p.ide || 'Windsurf'"></span>
+                    </div>
                     <div class="text-[10px] text-term-dim mt-0.5 truncate" x-text="p.path"></div>
                   </div>
                 </div>
@@ -589,6 +641,16 @@
                   <label class="text-[10px] text-term-dim mb-1 block uppercase" x-text="t('label_name')"></label>
                   <input class="input-field" placeholder="my-app" x-model="setupForm.name">
                 </div>
+                <div x-show="editingProjectIdx < 0">
+                  <label class="text-[10px] text-term-dim mb-1 block uppercase">IDE</label>
+                  <div class="flex gap-1">
+                    <template x-for="ide in ideProfiles" :key="ide.id">
+                      <button class="px-3 py-1.5 text-[10px] rounded border font-bold transition-all"
+                              :class="setupForm.ide === ide.id ? 'border-term-green text-term-green bg-term-select' : 'border-term-border text-term-dim'"
+                              @click="setupForm.ide = ide.id" x-text="ide.name"></button>
+                    </template>
+                  </div>
+                </div>
               </div>
               <p class="text-[10px] text-term-dim mt-2" x-show="editingProjectIdx < 0" x-text="t('ws_inject_desc')"></p>
               <div class="flex justify-end gap-2 mt-5">
@@ -603,10 +665,16 @@
 
         <!-- ═══ DASHBOARD ═══ -->
         <div x-show="tab === 'dashboard'" class="fade-in">
-          <h2 class="text-sm font-bold text-term-green mb-4 uppercase tracking-wider" x-text="t('dash_title')"></h2>
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-sm font-bold text-term-green uppercase tracking-wider" x-text="t('dash_title')"></h2>
+            <div class="flex gap-1">
+              <button class="btn-ghost text-[10px]" @click="exportSessions('json')">JSON</button>
+              <button class="btn-ghost text-[10px]" @click="exportSessions('csv')">CSV</button>
+            </div>
+          </div>
 
           <!-- Filter buttons -->
-          <div class="flex gap-1.5 mb-4">
+          <div class="flex gap-1.5 mb-4 overflow-x-auto pb-1">
             <button class="filter-btn" :class="sessionFilter === 'all' && 'active'" @click="sessionFilter = 'all'">
               ALL:<span x-text="sessions.length"></span>
             </button>
@@ -661,12 +729,21 @@
                         <button class="btn-danger text-[10px]" @click="deleteSession(s.session_id)" x-text="t('btn_del')"></button>
                       </div>
                     </div>
-                    <!-- Reply -->
-                    <div x-show="s.status === 'waiting' || s.status === 'need_confirm' || s.status === 'completed' || s.status === 'blocked'" class="mt-3 flex gap-2">
-                      <input class="input-field flex-1" :placeholder="t('dash_reply_ph')"
-                             x-model="replyTexts[s.session_id]" @keydown.enter="sendReply(s.session_id)">
-                      <button class="btn-primary" @click="sendReply(s.session_id)" x-text="t('btn_send')"></button>
-                      <button class="btn-danger" @click="cancelSession(s.session_id)">X</button>
+                    <!-- Quick Reply + Reply -->
+                    <div x-show="s.status === 'waiting' || s.status === 'need_confirm' || s.status === 'completed' || s.status === 'blocked'" class="mt-3 space-y-2">
+                      <div class="flex gap-1">
+                        <button class="btn-success text-[10px]" @click="quickReply(s.session_id, t('qr_continue'))" x-text="t('qr_continue')"></button>
+                        <button class="btn-ghost text-[10px]" @click="quickReply(s.session_id, t('qr_approved'))" x-text="t('qr_approved')"></button>
+                        <button class="btn-ghost text-[10px]" @click="quickReply(s.session_id, t('qr_rollback'))" x-text="t('qr_rollback')"></button>
+                        <button class="btn-ghost text-[10px]" @click="quickReply(s.session_id, t('qr_retry'))" x-text="t('qr_retry')"></button>
+                        <button class="btn-ghost text-[10px]" @click="quickReply(s.session_id, t('qr_skip'))" x-text="t('qr_skip')"></button>
+                      </div>
+                      <div class="flex gap-2">
+                        <input class="input-field flex-1" :placeholder="t('dash_reply_ph')"
+                               x-model="replyTexts[s.session_id]" @keydown.enter="sendReply(s.session_id)">
+                        <button class="btn-primary" @click="sendReply(s.session_id)" x-text="t('btn_send')"></button>
+                        <button class="btn-danger" @click="cancelSession(s.session_id)">X</button>
+                      </div>
                     </div>
                     <div x-show="s.reply" class="mt-2 text-[10px] text-term-dim">
                       > <span x-text="s.reply"></span>
@@ -676,6 +753,31 @@
               </div>
             </div>
           </template>
+
+          <!-- History timeline -->
+          <div x-show="completedSessions.length > 0" class="mt-6">
+            <div class="flex items-center gap-2 mb-3 cursor-pointer" @click="showHistory = !showHistory">
+              <span class="text-[10px] text-term-dim uppercase tracking-widest" x-text="'// ' + t('dash_history') + ' (' + completedSessions.length + ')'"></span>
+              <span class="text-[10px] text-term-dim" x-text="showHistory ? '▼' : '▶'"></span>
+            </div>
+            <div x-show="showHistory" class="space-y-1 fade-in">
+              <template x-for="s in completedSessions" :key="s.session_id">
+                <div class="flex items-start gap-2 py-1.5 px-2 rounded hover:bg-term-card">
+                  <span class="text-[9px] text-term-dim shrink-0 w-14 mt-0.5" x-text="(s.last_active || s.timestamp || '').slice(5, 16).replace('T',' ')"></span>
+                  <span class="text-[9px] font-bold shrink-0 w-8"
+                        :class="{
+                          'text-term-green': s.status === 'executing',
+                          'text-term-dim': s.status === 'cancelled',
+                        }" x-text="s.status === 'cancelled' ? '[X]' : '[✓]'"></span>
+                  <div class="flex-1 min-w-0">
+                    <span class="text-[10px] text-term-text" x-text="s.task"></span>
+                    <span x-show="s.reply" class="text-[9px] text-term-dim ml-2">→ <span x-text="(s.reply || '').slice(0, 40)"></span></span>
+                  </div>
+                  <span class="text-[9px] text-term-dim shrink-0" x-text="s.project"></span>
+                </div>
+              </template>
+            </div>
+          </div>
         </div>
 
         <!-- ═══ SETTINGS ═══ -->
@@ -727,6 +829,14 @@
               <label class="text-[10px] text-term-dim mb-1 block uppercase" x-text="t('cfg_ws_path')"></label>
               <input class="input-field" x-model="settingsForm.windsurf_path" placeholder="auto-detect">
             </div>
+            <div class="border-t border-term-border"></div>
+            <div>
+              <label class="text-[10px] text-term-dim mb-1 block uppercase" x-text="t('cfg_webhook')"></label>
+              <input class="input-field" x-model="settingsForm.webhook_url" :placeholder="t('cfg_webhook_ph')">
+              <p class="text-[10px] text-term-dim mt-1" x-text="t('cfg_webhook_desc')"></p>
+              <button class="btn-ghost text-[10px] mt-2" @click="testWebhook()" :disabled="!settingsForm.webhook_url || webhookTesting"
+                      x-text="webhookTesting ? '...' : t('cfg_webhook_test')"></button>
+            </div>
             <div class="pt-2">
               <button class="btn-primary" @click="saveSettingsForm()" x-text="t('btn_save')"></button>
             </div>
@@ -762,7 +872,7 @@ document.addEventListener('alpine:initialized', () => {
 
 const _i18n = {
   zh: {
-    nav_kill:'终止端口', nav_ssh:'SSH 连接', nav_sshcfg:'SSH 配置', nav_windsurf:'WINDSURF',
+    nav_kill:'终止端口', nav_ssh:'SSH 连接', nav_sshcfg:'SSH 配置', nav_projects:'项目',
     nav_board:'看板', nav_config:'设置', nav_clean:'清理',
     kill_title:'// 终止端口',
     kill_desc:'输入端口号，查找并终止监听进程',
@@ -790,20 +900,23 @@ const _i18n = {
     ssh_test_ok:'连接成功', ssh_test_fail:'连接失败', ssh_test_no_host:'请先填写主机地址',
     label_remote_path:'远程路径',
     btn_cancel:'取消', btn_save:'保存', btn_edit:'编辑', btn_del:'删除', btn_reinject:'重注入',
-    ws_title:'// Windsurf', ws_setup:'+ 配置',
+    ws_title:'// 项目', ws_setup:'+ 配置',
     ws_no_project:'暂无项目',
     ws_edit_title:'// 编辑项目', ws_setup_title:'// 配置项目',
-    ws_inject_desc:'自动注入 .windsurf/workflows/ 规则和上报脚本',
+    ws_inject_desc:'自动注入 IDE 规则和上报脚本（支持 Windsurf / Cursor）',
     ws_path_ph:'点击浏览选择项目文件夹',
     btn_browse:'浏览...',
     label_path:'路径', btn_open:'打开', btn_setup:'配置', btn_working:'处理中...',
-    dash_title:'// 看板', dash_no_session:'暂无活跃会话',
+    dash_title:'// 看板', dash_no_session:'暂无活跃会话', dash_history:'历史记录',
     btn_fix:'修复', btn_cpy:'复制', btn_send:'发送', dash_reply_ph:'输入回复...',
     cfg_title:'// 设置',
     cfg_autostart:'开机自启', cfg_autostart_desc:'开机时自动启动 Listary 工具集',
     cfg_port:'服务端口', cfg_port_desc:'默认 9000，修改后重启生效',
     cfg_stuck:'卡住超时 (分钟)', cfg_expire:'会话过期 (天)',
     cfg_ws_path:'Windsurf 路径', cfg_lang:'语言', cfg_lang_desc:'界面显示语言',
+    cfg_webhook:'Webhook 通知', cfg_webhook_ph:'https://api.telegram.org/bot.../sendMessage 或其他',
+    cfg_webhook_desc:'会话状态变化时推送到手机（支持 Telegram / 企业微信 / 钉钉 / Bark / 通用 Webhook）',
+    cfg_webhook_test:'测试发送', toast_webhook_ok:'Webhook 发送成功', toast_webhook_fail:'Webhook 发送失败',
     toast_killed:'终止 {0} 个进程', toast_no_listen:'端口 {0} 无监听',
     toast_connected:'已连接: {0}', toast_key_saved:'密钥已保存为文件', toast_server_updated:'服务器已更新',
     toast_server_added:'服务器已添加', toast_deleted:'已删除: {0}',
@@ -816,9 +929,13 @@ const _i18n = {
     toast_autostart_on:'已启用开机自启', toast_autostart_off:'已关闭开机自启',
     confirm_clean:'清理所有历史数据？',
     confirm_delete_server:'删除「{0}」？', confirm_remove_project:'移除「{0}」？',
+    qr_continue:'继续', qr_approved:'批准', qr_rollback:'回滚', qr_retry:'重试', qr_skip:'跳过',
+    btn_export:'导出',
+    confirm_delete_file:'删除「{0}」？此操作不可恢复。', prompt_rename:'重命名「{0}」为：',
+    toast_file_deleted:'已删除: {0}', toast_file_renamed:'已重命名: {0} → {1}',
   },
   en: {
-    nav_kill:'KILL PORT', nav_ssh:'SSH', nav_sshcfg:'SSH CFG', nav_windsurf:'WINDSURF',
+    nav_kill:'KILL PORT', nav_ssh:'SSH', nav_sshcfg:'SSH CFG', nav_projects:'PROJECTS',
     nav_board:'BOARD', nav_config:'CONFIG', nav_clean:'CLEAN',
     kill_title:'// Kill Port',
     kill_desc:'Enter port number to find and terminate listening process',
@@ -846,20 +963,23 @@ const _i18n = {
     ssh_test_ok:'Connection successful', ssh_test_fail:'Connection failed', ssh_test_no_host:'Please enter host first',
     label_remote_path:'Remote Path',
     btn_cancel:'CANCEL', btn_save:'SAVE', btn_edit:'EDIT', btn_del:'DEL', btn_reinject:'REINJECT',
-    ws_title:'// Windsurf', ws_setup:'+ SETUP',
+    ws_title:'// Projects', ws_setup:'+ SETUP',
     ws_no_project:'No projects',
     ws_edit_title:'// EDIT PROJECT', ws_setup_title:'// SETUP PROJECT',
-    ws_inject_desc:'Auto-inject .windsurf/workflows/ rules and report script',
+    ws_inject_desc:'Auto-inject IDE rules and report script (Windsurf / Cursor)',
     ws_path_ph:'Click browse to select project folder',
     btn_browse:'BROWSE',
     label_path:'Path', btn_open:'OPEN', btn_setup:'SETUP', btn_working:'WORKING...',
-    dash_title:'// Dashboard', dash_no_session:'No active sessions',
+    dash_title:'// Dashboard', dash_no_session:'No active sessions', dash_history:'History',
     btn_fix:'FIX', btn_cpy:'CPY', btn_send:'SEND', dash_reply_ph:'reply...',
     cfg_title:'// Config',
     cfg_autostart:'Auto Start', cfg_autostart_desc:'Launch Listary Tools on system startup',
     cfg_port:'Server Port', cfg_port_desc:'Default 9000, restart required after change',
     cfg_stuck:'Stuck Timeout (min)', cfg_expire:'Session Expire (days)',
     cfg_ws_path:'Windsurf Path', cfg_lang:'Language', cfg_lang_desc:'Interface display language',
+    cfg_webhook:'Webhook', cfg_webhook_ph:'https://api.telegram.org/bot.../sendMessage or other',
+    cfg_webhook_desc:'Push to phone on session status change (Telegram / WeCom / DingTalk / Bark / generic)',
+    cfg_webhook_test:'TEST', toast_webhook_ok:'Webhook sent', toast_webhook_fail:'Webhook failed',
     toast_killed:'Terminated {0} process(es)', toast_no_listen:'Port {0} not listening',
     toast_connected:'Connected: {0}', toast_key_saved:'Key saved as file', toast_server_updated:'Server updated',
     toast_server_added:'Server added', toast_deleted:'Deleted: {0}',
@@ -872,12 +992,17 @@ const _i18n = {
     toast_autostart_on:'Auto-start enabled', toast_autostart_off:'Auto-start disabled',
     confirm_clean:'Clean all history data?',
     confirm_delete_server:'Delete "{0}"?', confirm_remove_project:'Remove "{0}"?',
+    qr_continue:'Continue', qr_approved:'Approve', qr_rollback:'Rollback', qr_retry:'Retry', qr_skip:'Skip',
+    btn_export:'EXPORT',
+    confirm_delete_file:'Delete "{0}"? This cannot be undone.', prompt_rename:'Rename "{0}" to:',
+    toast_file_deleted:'Deleted: {0}', toast_file_renamed:'Renamed: {0} → {1}',
   }
 };
 
 function app() {
   return {
     tab: 'kill',
+    mobileNav: false,
     toasts: [],
     lang: localStorage.getItem('listary_lang') || 'zh',
     killPort: '', killing: false, killResult: null,
@@ -888,11 +1013,12 @@ function app() {
     generatedPubKey: '', generatingKey: false, keyIsNew: false,
     sshTesting: false, sshTestResult: null, sshTestError: '',
     projects: [], showSetupForm: false, settingUp: false, browsing: false,
-    setupForm: { path: '', name: '' }, editingProjectIdx: -1,
+    setupForm: { path: '', name: '', ide: 'windsurf' }, editingProjectIdx: -1,
+    ideProfiles: [],
     sessions: [], replyTexts: {}, ws: null,
-    sessionFilter: 'all',
-    settingsForm: { port: 9000, stuck_timeout: 5, session_expire_days: 7, windsurf_path: '' },
-    autostart: false, autostartLoading: false,
+    sessionFilter: 'all', showHistory: false,
+    settingsForm: { port: 9000, stuck_timeout: 5, session_expire_days: 7, windsurf_path: '', webhook_url: '' },
+    autostart: false, autostartLoading: false, webhookTesting: false,
 
     t(key, ...args) {
       let s = (_i18n[this.lang] || _i18n.zh)[key] || key;
@@ -920,6 +1046,10 @@ function app() {
       return this.sessions.filter(s => s.status === this.sessionFilter);
     },
 
+    get completedSessions() {
+      return this.sessions.filter(s => s.status === 'executing' || s.status === 'cancelled');
+    },
+
     get filteredGroupedSessions() {
       const g = {};
       this.filteredSessions.forEach(s => { (g[s.project] = g[s.project] || []).push(s); });
@@ -928,11 +1058,12 @@ function app() {
 
     init() {
       document.documentElement.lang = this.lang === 'zh' ? 'zh-CN' : 'en';
-      this.connectWS(); this.loadListeningPorts();
+      this.connectWS(); this.loadListeningPorts(); this.loadIdeProfiles();
     },
 
     switchTab(t) {
       this.tab = t;
+      this.mobileNav = false;
       if (t === 'kill') this.loadListeningPorts();
     },
 
@@ -1140,6 +1271,36 @@ function app() {
       };
       input.click();
     },
+    async downloadFile(serverIdx, f) {
+      const fb = this.fileBrowsers[serverIdx];
+      if (!fb) return;
+      const params = new URLSearchParams({ subpath: fb.subpath || '', filename: f.name });
+      window.open(`/api/servers/${serverIdx}/download?${params}`, '_blank');
+    },
+    async deleteFile(serverIdx, f) {
+      if (!confirm(`${this.t('confirm_delete_file', f.name)}`)) return;
+      const fb = this.fileBrowsers[serverIdx];
+      if (!fb) return;
+      try {
+        const params = new URLSearchParams({ subpath: fb.subpath || '', filename: f.name });
+        await this.api('DELETE', `/api/servers/${serverIdx}/files?${params}`);
+        this.toast(this.t('toast_file_deleted', f.name));
+        await this.loadRemoteFiles(serverIdx, fb.subpath);
+      } catch (e) { this.toast(e.message, 'error'); }
+    },
+    async renameFile(serverIdx, f) {
+      const newName = prompt(this.t('prompt_rename', f.name), f.name);
+      if (!newName || newName === f.name) return;
+      const fb = this.fileBrowsers[serverIdx];
+      if (!fb) return;
+      try {
+        await this.api('POST', `/api/servers/${serverIdx}/rename`, {
+          subpath: fb.subpath || '', old_name: f.name, new_name: newName,
+        });
+        this.toast(this.t('toast_file_renamed', f.name, newName));
+        await this.loadRemoteFiles(serverIdx, fb.subpath);
+      } catch (e) { this.toast(e.message, 'error'); }
+    },
     fileIcon(f) {
       if (f.type === 'dir') return 'folder';
       const ext = (f.name.split('.').pop() || '').toLowerCase();
@@ -1179,12 +1340,15 @@ function app() {
       return colors[ext] || '#666';
     },
 
+    async loadIdeProfiles() {
+      try { this.ideProfiles = await this.api('GET', '/api/ide-profiles'); } catch (e) {}
+    },
     async loadProjects() {
       try { this.projects = await this.api('GET', '/api/projects'); } catch (e) { this.toast(e.message, 'error'); }
     },
     editProject(i) {
       this.editingProjectIdx = i;
-      this.setupForm = { path: this.projects[i].path, name: this.projects[i].name };
+      this.setupForm = { path: this.projects[i].path, name: this.projects[i].name, ide: this.projects[i].ide || 'windsurf' };
       this.showSetupForm = true;
     },
     async updateProject() {
@@ -1194,7 +1358,7 @@ function app() {
         await this.api('DELETE', `/api/projects/${i}`);
         const r = await this.api('POST', '/api/projects/setup', this.setupForm);
         this.projects = r.projects; this.showSetupForm = false;
-        this.setupForm = { path: '', name: '' }; this.editingProjectIdx = -1;
+        this.setupForm = { path: '', name: '', ide: 'windsurf' }; this.editingProjectIdx = -1;
         this.toast(this.t('toast_project_updated', r.project));
       } catch (e) { this.toast(e.message, 'error'); }
       this.settingUp = false;
@@ -1217,7 +1381,7 @@ function app() {
       try {
         const r = await this.api('POST', '/api/projects/setup', this.setupForm);
         this.projects = r.projects; this.showSetupForm = false;
-        this.setupForm = { path: '', name: '' }; this.editingProjectIdx = -1;
+        this.setupForm = { path: '', name: '', ide: 'windsurf' }; this.editingProjectIdx = -1;
         this.toast(this.t('toast_project_configured', r.project));
       } catch (e) { this.toast(e.message, 'error'); }
       this.settingUp = false;
@@ -1238,6 +1402,9 @@ function app() {
 
     async loadSessions() {
       try { this.sessions = await this.api('GET', '/api/sessions'); } catch (e) {}
+    },
+    exportSessions(fmt) {
+      window.open(`/api/sessions/export?fmt=${fmt}`, '_blank');
     },
     _wsDelay: 1000,
     connectWS() {
@@ -1268,6 +1435,10 @@ function app() {
         setTimeout(() => this.connectWS(), this._wsDelay);
         this._wsDelay = Math.min(this._wsDelay * 1.5, 30000);
       };
+    },
+    async quickReply(sid, text) {
+      try { await this.api('POST', `/api/reply/${sid}`, { reply: text }); this.toast(this.t('toast_reply_sent')); }
+      catch (e) { this.toast(e.message, 'error'); }
     },
     async sendReply(sid) {
       const text = this.replyTexts[sid]; if (!text) return;
@@ -1313,6 +1484,14 @@ function app() {
         this.toast(r.enabled ? this.t('toast_autostart_on') : this.t('toast_autostart_off'));
       } catch (e) { this.toast(e.message, 'error'); }
       this.autostartLoading = false;
+    },
+    async testWebhook() {
+      this.webhookTesting = true;
+      try {
+        const r = await this.api('POST', '/api/webhook/test', { url: this.settingsForm.webhook_url });
+        this.toast(r.ok ? this.t('toast_webhook_ok') : (r.error || this.t('toast_webhook_fail')), r.ok ? 'success' : 'error');
+      } catch (e) { this.toast(e.message, 'error'); }
+      this.webhookTesting = false;
     },
     async saveSettingsForm() {
       try { await this.api('POST', '/api/settings', this.settingsForm); this.toast(this.t('toast_settings_saved')); }

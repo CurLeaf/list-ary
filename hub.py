@@ -98,6 +98,7 @@ def launch_gui():
         width=WINDOW_WIDTH,
         height=WINDOW_HEIGHT,
         min_size=(800, 500),
+        background_color="#0c0c0c",
     )
 
     def _wait_and_navigate(win):
@@ -144,7 +145,8 @@ def launch_gui():
                 win.show()
 
             def on_quit(icon, item):
-                sys.exit(0)
+                icon.stop()
+                win.destroy()
 
             icon = pystray.Icon(
                 "listary",

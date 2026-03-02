@@ -1,9 +1,12 @@
 """Session/Dashboard API 路由"""
 
 import asyncio
+import csv
+import io
+import json
 
 from fastapi import APIRouter
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from dashboard.models import (
     ReportRequest, ReplyRequest, SessionPatch,
@@ -136,3 +139,30 @@ async def clean_sessions():
     count = await async_clean_all_sessions()
     await broadcast_ws({"type": "all_cleaned", "sessions": []})
     return {"ok": True, "cleaned": count}
+
+
+@router.get("/sessions/export")
+async def export_sessions(fmt: str = "json"):
+    """导出所有会话数据（json 或 csv）"""
+    sessions = await async_get_all_sessions()
+    if fmt == "csv":
+        output = io.StringIO()
+        if sessions:
+            fields = ["session_id", "project", "task", "status", "questions", "reply", "timestamp", "last_active"]
+            writer = csv.DictWriter(output, fieldnames=fields, extrasaction="ignore")
+            writer.writeheader()
+            for s in sessions:
+                row = {**s}
+                if isinstance(row.get("questions"), list):
+                    row["questions"] = "; ".join(row["questions"])
+                writer.writerow(row)
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=sessions.csv"},
+        )
+    return StreamingResponse(
+        iter([json.dumps(sessions, ensure_ascii=False, indent=2)]),
+        media_type="application/json",
+        headers={"Content-Disposition": "attachment; filename=sessions.json"},
+    )

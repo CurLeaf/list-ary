@@ -407,6 +407,128 @@ async def upload_file(index: int, file: UploadFile = File(...), subpath: str = F
             pass
 
 
+@router.delete("/servers/{index}/files")
+async def delete_remote_file(index: int, subpath: str = "", filename: str = ""):
+    """删除远程文件或目录"""
+    from modules.ssh_manager import load_servers
+    servers = load_servers()
+    if not (0 <= index < len(servers)):
+        return JSONResponse(status_code=404, content={"error": "服务器不存在"})
+    server = servers[index]
+    root_path = server.get("path", "").strip().rstrip("/")
+    if not root_path or not filename:
+        return JSONResponse(status_code=400, content={"error": "缺少路径或文件名"})
+
+    normalized = _validate_subpath(subpath)
+    if normalized is None:
+        return JSONResponse(status_code=403, content={"error": "路径越界"})
+
+    target_dir = f"{root_path}/{normalized}" if normalized else root_path
+    target = f"{target_dir}/{filename}"
+
+    ssh_cmd = _build_ssh_cmd(server)
+    ssh_cmd.append(f"rm -rf {shlex.quote(target)}")
+
+    try:
+        result = await asyncio.to_thread(
+            subprocess.run, ssh_cmd,
+            capture_output=True, text=True, timeout=15,
+            creationflags=_SUBPROCESS_FLAGS
+        )
+        if result.returncode != 0:
+            return JSONResponse(status_code=500, content={"error": result.stderr.strip() or "删除失败"})
+        return {"ok": True, "deleted": filename}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@router.post("/servers/{index}/rename")
+async def rename_remote_file(index: int, req: dict):
+    """重命名远程文件或目录"""
+    from modules.ssh_manager import load_servers
+    servers = load_servers()
+    if not (0 <= index < len(servers)):
+        return JSONResponse(status_code=404, content={"error": "服务器不存在"})
+    server = servers[index]
+    root_path = server.get("path", "").strip().rstrip("/")
+    subpath = req.get("subpath", "")
+    old_name = req.get("old_name", "").strip()
+    new_name = req.get("new_name", "").strip()
+    if not root_path or not old_name or not new_name:
+        return JSONResponse(status_code=400, content={"error": "缺少必要参数"})
+    if "/" in new_name or "\\" in new_name:
+        return JSONResponse(status_code=400, content={"error": "新名称不能含路径分隔符"})
+
+    normalized = _validate_subpath(subpath)
+    if normalized is None:
+        return JSONResponse(status_code=403, content={"error": "路径越界"})
+
+    target_dir = f"{root_path}/{normalized}" if normalized else root_path
+    old_path = f"{target_dir}/{old_name}"
+    new_path = f"{target_dir}/{new_name}"
+
+    ssh_cmd = _build_ssh_cmd(server)
+    ssh_cmd.append(f"mv {shlex.quote(old_path)} {shlex.quote(new_path)}")
+
+    try:
+        result = await asyncio.to_thread(
+            subprocess.run, ssh_cmd,
+            capture_output=True, text=True, timeout=15,
+            creationflags=_SUBPROCESS_FLAGS
+        )
+        if result.returncode != 0:
+            return JSONResponse(status_code=500, content={"error": result.stderr.strip() or "重命名失败"})
+        return {"ok": True, "old_name": old_name, "new_name": new_name}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@router.get("/servers/{index}/download")
+async def download_remote_file(index: int, subpath: str = "", filename: str = ""):
+    """通过 SCP 下载远程文件"""
+    from modules.ssh_manager import load_servers
+    from fastapi.responses import FileResponse
+    servers = load_servers()
+    if not (0 <= index < len(servers)):
+        return JSONResponse(status_code=404, content={"error": "服务器不存在"})
+    server = servers[index]
+    root_path = server.get("path", "").strip().rstrip("/")
+    if not root_path or not filename:
+        return JSONResponse(status_code=400, content={"error": "缺少路径或文件名"})
+
+    normalized = _validate_subpath(subpath)
+    if normalized is None:
+        return JSONResponse(status_code=403, content={"error": "路径越界"})
+
+    target_dir = f"{root_path}/{normalized}" if normalized else root_path
+    remote_file = f"{target_dir}/{filename}"
+
+    tmp_path = os.path.join(tempfile.gettempdir(), f"listary_dl_{filename}")
+
+    scp_cmd = ["scp",
+               "-o", "StrictHostKeyChecking=accept-new",
+               "-o", f"UserKnownHostsFile={_known_hosts_path()}"]
+    if server.get("port") and server["port"] != 22:
+        scp_cmd += ["-P", str(server["port"])]
+    if server.get("key"):
+        key_val = server["key"]
+        if "PRIVATE KEY" not in key_val:
+            scp_cmd += ["-i", os.path.expanduser(key_val)]
+    scp_cmd += [f"{server['host']}:{remote_file}", tmp_path]
+
+    try:
+        result = await asyncio.to_thread(
+            subprocess.run, scp_cmd,
+            capture_output=True, text=True, timeout=120,
+            creationflags=_SUBPROCESS_FLAGS
+        )
+        if result.returncode != 0:
+            return JSONResponse(status_code=500, content={"error": result.stderr.strip() or "下载失败"})
+        return FileResponse(tmp_path, filename=filename, media_type="application/octet-stream")
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
 @router.get("/ssh-key/open-dir")
 async def open_ssh_key_dir():
     """在文件资源管理器中打开 SSH 密钥所在目录"""

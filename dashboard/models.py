@@ -69,3 +69,4 @@ class ServerConfig(BaseModel):
 class ProjectSetup(BaseModel):
     path: str
     name: str
+    ide: str = "windsurf"

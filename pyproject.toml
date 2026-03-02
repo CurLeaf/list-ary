@@ -1,0 +1,33 @@
+[project]
+name = "listary-tools"
+dynamic = ["version"]
+description = "Windows 本地自动化中台 — AI 编码代理监管看板 + 远程服务器运维工具"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+    "rich>=13.0",
+    "psutil>=5.9",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "httpx>=0.27",
+    "winotify>=1.1",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.6",
+    "pywebview>=5.0",
+    "paramiko>=3.0",
+]
+
+[project.optional-dependencies]
+tray = ["pystray>=0.19", "Pillow>=10.0"]
+build = ["pyinstaller>=6.0"]
+
+[project.scripts]
+listary = "hub:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "version.__version__"}
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
